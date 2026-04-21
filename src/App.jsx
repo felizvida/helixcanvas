@@ -1,6 +1,7 @@
 import { startTransition, useDeferredValue, useEffect, useRef, useState } from "react";
 import { SERVIER_KITS, SERVIER_ORIGINALS, SOURCE_POLICIES } from "./data/servier.js";
 import { TEMPLATES } from "./data/templates.js";
+import { fetchAiHealth, requestFigureCritique, requestFigurePlan } from "./lib/ai.js";
 import { collectProjectCitations, downloadText, projectToSvg } from "./lib/exporters.js";
 
 const STORAGE_KEYS = {
@@ -26,7 +27,7 @@ const HERO_KPIS = [
   { label: "Open assets", value: "2.8K+" },
   { label: "Servier vectors", value: "1.3K+" },
   { label: "Official PPT kits", value: "50" },
-  { label: "Export modes", value: "SVG + JSON" },
+  { label: "AI copilots", value: "Plan + critique" },
 ];
 
 function createId(prefix) {
@@ -197,6 +198,247 @@ function openExternalLink(href) {
   window.open(href, "_blank", "noopener,noreferrer");
 }
 
+function buildProjectSummaryForAi(project) {
+  const citations = collectProjectCitations(project);
+
+  return {
+    name: project.name,
+    brief: project.brief,
+    board: project.board,
+    counts: {
+      nodes: project.nodes.length,
+      connectors: project.connectors.length,
+      assets: project.nodes.filter((node) => node.type === "asset").length,
+      text: project.nodes.filter((node) => node.type === "text").length,
+      shapes: project.nodes.filter((node) => node.type === "shape").length,
+    },
+    nodes: project.nodes.slice(0, 8).map((node) => ({
+      type: node.type,
+      title: node.title ?? "",
+      text: node.text ?? "",
+      x: Math.round(node.x ?? 0),
+      y: Math.round(node.y ?? 0),
+      w: Math.round(node.w ?? 0),
+      h: Math.round(node.h ?? 0),
+      sourceLabel: node.sourceLabel ?? "",
+    })),
+    citationsCount: citations ? citations.split("\n").filter(Boolean).length : 0,
+  };
+}
+
+function getEmphasisTheme(palette, emphasis) {
+  if (emphasis === "olive") {
+    return {
+      fill: "#eef4dc",
+      stroke: palette.olive ?? "#88a166",
+    };
+  }
+
+  if (emphasis === "coral") {
+    return {
+      fill: "#f9dfd2",
+      stroke: palette.coral ?? "#ef8354",
+    };
+  }
+
+  if (emphasis === "neutral") {
+    return {
+      fill: "#ffffff",
+      stroke: "#d7d3cb",
+    };
+  }
+
+  return {
+    fill: palette.accentSoft ?? "#d7ecec",
+    stroke: palette.accent ?? "#0d7b83",
+  };
+}
+
+function createPlanProject(plan) {
+  const template =
+    TEMPLATES.find((item) => item.id === plan.templateId) ??
+    inferTemplateFromBrief(`${plan.title} ${plan.summary}`) ??
+    TEMPLATES[0];
+  const baseProject = normalizeTemplate(template);
+  const assetNodes = baseProject.nodes.filter((node) => node.type === "asset");
+  const templateShapeNodes = baseProject.nodes.filter((node) => node.type === "shape");
+  const panelCount = plan.panelSequence.length;
+  const panelNodes = [];
+  const detailNodes = [];
+  const noteNodes = [];
+
+  let fallbackX = template.id === "workflow-board" ? 92 : 720;
+  let fallbackY = template.id === "workflow-board" ? 220 : 178;
+
+  plan.panelSequence.forEach((panel, index) => {
+    const referenceNode = templateShapeNodes[index];
+    const horizontalWorkflow = template.id === "workflow-board";
+    const shapeX = referenceNode
+      ? referenceNode.x
+      : horizontalWorkflow
+        ? fallbackX + index * 294
+        : fallbackX;
+    const shapeY = referenceNode
+      ? referenceNode.y
+      : horizontalWorkflow
+        ? fallbackY
+        : fallbackY + index * 122;
+    const shapeW = referenceNode?.w ?? 220;
+    const shapeH = referenceNode?.h ?? 74;
+    const theme = getEmphasisTheme(baseProject.palette, panel.emphasis);
+
+    panelNodes.push({
+      id: createId("node"),
+      type: "shape",
+      shape: "card",
+      text: `${index + 1}. ${panel.heading}`,
+      fill: theme.fill,
+      stroke: theme.stroke,
+      color: baseProject.palette.ink,
+      strokeWidth: 2,
+      x: shapeX,
+      y: shapeY,
+      w: shapeW,
+      h: shapeH,
+      rotation: 0,
+      opacity: 1,
+    });
+
+    detailNodes.push({
+      id: createId("node"),
+      type: "text",
+      text: panel.body,
+      fontSize: 15,
+      fontWeight: 500,
+      color: "#4d5d68",
+      x: shapeX,
+      y: shapeY + shapeH + 28,
+      w: horizontalWorkflow ? shapeW : Math.min(shapeW + 48, 320),
+      rotation: 0,
+      opacity: 1,
+    });
+  });
+
+  const notesStartY =
+    template.id === "workflow-board"
+      ? 676
+      : template.id === "anatomy-focus"
+        ? 600
+        : 610;
+
+  plan.callouts.forEach((callout, index) => {
+    noteNodes.push({
+      id: createId("node"),
+      type: "text",
+      text: `- ${callout}`,
+      fontSize: 16,
+      fontWeight: 500,
+      color: "#51606d",
+      x: 94,
+      y: notesStartY + index * 28,
+      w: 760,
+      rotation: 0,
+      opacity: 1,
+    });
+  });
+
+  const titleNode = {
+    id: createId("node"),
+    type: "text",
+    text: plan.title,
+    fontSize: 34,
+    fontWeight: 700,
+    color: baseProject.palette.ink,
+    x: 94,
+    y: 72,
+    w: 820,
+    rotation: 0,
+    opacity: 1,
+  };
+
+  const summaryNode = {
+    id: createId("node"),
+    type: "text",
+    text: plan.figureGoal,
+    fontSize: 16,
+    fontWeight: 500,
+    color: "#51606d",
+    x: 94,
+    y: 102,
+    w: 860,
+    rotation: 0,
+    opacity: 1,
+  };
+
+  return {
+    ...baseProject,
+    name: plan.title,
+    brief: plan.summary,
+    nodes: [titleNode, summaryNode, ...assetNodes, ...panelNodes, ...detailNodes, ...noteNodes],
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function getAssetMatchScore(asset, suggestion) {
+  const terms = suggestion.query
+    .toLowerCase()
+    .split(/[^a-z0-9]+/i)
+    .filter(Boolean);
+  const haystack = [
+    asset.title,
+    asset.searchText,
+    asset.categoryLabel,
+    asset.sourceLabel,
+    asset.originLabel,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  let score = 0;
+
+  if (asset.sourceBucket === suggestion.preferredSourceBucket) {
+    score += 6;
+  }
+
+  if (haystack.includes(suggestion.query.toLowerCase())) {
+    score += 8;
+  }
+
+  for (const term of terms) {
+    if (asset.title?.toLowerCase().includes(term)) {
+      score += 5;
+    }
+    if (asset.searchText?.includes(term)) {
+      score += 4;
+    }
+    if (asset.categoryLabel?.toLowerCase().includes(term)) {
+      score += 2;
+    }
+  }
+
+  return score;
+}
+
+function buildAiSuggestions(suggestions, library) {
+  return suggestions.map((suggestion) => {
+    const matches = [...library]
+      .map((asset) => ({
+        asset,
+        score: getAssetMatchScore(asset, suggestion),
+      }))
+      .filter((item) => item.score > 0)
+      .sort((left, right) => right.score - left.score)
+      .slice(0, 4)
+      .map((item) => item.asset);
+
+    return {
+      ...suggestion,
+      matches,
+    };
+  });
+}
+
 function AssetCard({ asset, onAdd, active, onSelectSource }) {
   return (
     <article className={`asset-card ${active ? "is-active" : ""}`}>
@@ -297,6 +539,19 @@ function App() {
   const [notice, setNotice] = useState("");
   const [zoom, setZoom] = useState(0.78);
   const [dragState, setDragState] = useState(null);
+  const [aiStatus, setAiStatus] = useState({
+    checking: true,
+    configured: false,
+    model: "",
+    error: "",
+  });
+  const [aiPlan, setAiPlan] = useState(null);
+  const [aiCritique, setAiCritique] = useState(null);
+  const [aiSuggestions, setAiSuggestions] = useState([]);
+  const [aiBusy, setAiBusy] = useState({
+    planning: false,
+    critique: false,
+  });
 
   const boardRef = useRef(null);
   const deferredQuery = useDeferredValue(libraryQuery.trim().toLowerCase());
@@ -317,6 +572,26 @@ function App() {
   }, []);
 
   useEffect(() => {
+    fetchAiHealth()
+      .then((payload) => {
+        setAiStatus({
+          checking: false,
+          configured: Boolean(payload.configured),
+          model: payload.model ?? "",
+          error: "",
+        });
+      })
+      .catch((error) => {
+        setAiStatus({
+          checking: false,
+          configured: false,
+          model: "",
+          error: error instanceof Error ? error.message : "AI service unavailable.",
+        });
+      });
+  }, []);
+
+  useEffect(() => {
     window.localStorage.setItem(STORAGE_KEYS.project, JSON.stringify(project));
   }, [project]);
 
@@ -332,6 +607,17 @@ function App() {
     const timer = window.setTimeout(() => setNotice(""), 2800);
     return () => window.clearTimeout(timer);
   }, [notice]);
+
+  useEffect(() => {
+    const unifiedLibrary = [...SERVIER_ORIGINALS, ...importedAssets, ...library];
+
+    if (!aiPlan?.assetQueries?.length) {
+      setAiSuggestions([]);
+      return;
+    }
+
+    setAiSuggestions(buildAiSuggestions(aiPlan.assetQueries, unifiedLibrary));
+  }, [aiPlan, importedAssets, library]);
 
   useEffect(() => {
     if (!dragState) {
@@ -537,6 +823,90 @@ function App() {
     });
   }
 
+  function applyAiPlan(plan) {
+    const draftedProject = createPlanProject(plan);
+
+    startTransition(() => {
+      setProject(draftedProject);
+      setSelection(null);
+      setNotice("Applied AI figure plan");
+    });
+  }
+
+  async function copyTextValue(text, successMessage) {
+    if (!text) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setNotice(successMessage);
+    } catch {
+      downloadText("helixcanvas-ai-note.txt", text);
+      setNotice("Clipboard unavailable, downloaded text instead");
+    }
+  }
+
+  async function draftWithAi() {
+    if (!brief.trim()) {
+      setNotice("Add a research brief first");
+      return;
+    }
+
+    if (!aiStatus.configured) {
+      draftFromBrief();
+      setNotice("AI unavailable, used the local quick draft");
+      return;
+    }
+
+    setAiBusy((current) => ({ ...current, planning: true }));
+
+    try {
+      const response = await requestFigurePlan({
+        brief,
+        currentProject: buildProjectSummaryForAi(project),
+      });
+
+      setAiPlan(response.plan);
+      setAiCritique(null);
+      applyAiPlan(response.plan);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "AI drafting failed");
+    } finally {
+      setAiBusy((current) => ({ ...current, planning: false }));
+    }
+  }
+
+  async function critiqueWithAi() {
+    if (!aiStatus.configured) {
+      setNotice(aiStatus.error || "AI critique is unavailable until the server is configured");
+      return;
+    }
+
+    setAiBusy((current) => ({ ...current, critique: true }));
+
+    try {
+      const response = await requestFigureCritique({
+        brief: brief || project.brief,
+        currentProject: buildProjectSummaryForAi(project),
+      });
+
+      setAiCritique(response.critique);
+      setNotice("AI critique ready");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "AI critique failed");
+    } finally {
+      setAiBusy((current) => ({ ...current, critique: false }));
+    }
+  }
+
+  function focusSuggestionSearch(suggestion) {
+    setLibraryQuery(suggestion.query);
+    setSourceFilter(suggestion.preferredSourceBucket);
+    setCategoryFilter("all");
+    setNotice(`Focused the library on "${suggestion.query}"`);
+  }
+
   function updateSelectedNode(patch) {
     if (!selectedNode) {
       return;
@@ -662,6 +1032,9 @@ function App() {
     setProject(createStarterProject());
     setSelection(null);
     setBrief("");
+    setAiPlan(null);
+    setAiCritique(null);
+    setAiSuggestions([]);
     setNotice("Reset to starter project");
   }
 
@@ -745,7 +1118,7 @@ function App() {
     <div className="app-shell">
       <header className="topbar">
         <div>
-          <span className="eyebrow">Biomedical figure SaaS concept</span>
+          <span className="eyebrow">AI-native biomedical figure studio</span>
           <h1>HelixCanvas</h1>
         </div>
         <div className="topbar__actions">
@@ -764,11 +1137,12 @@ function App() {
       <section className="hero">
         <div className="hero__copy">
           <span className="eyebrow">Open biomedical illustration platform</span>
-          <h2>Create publication-ready figures from open libraries and user-owned imports.</h2>
+          <h2>Create publication-ready figures with open libraries and a source-aware AI copilot.</h2>
           <p>
             HelixCanvas combines Bioicons, the Servier vector subset, official Servier Medical
             Art downloads, and a safe import lane for your own FigureLabs exports into one
-            publication-focused editor.
+            publication-focused editor. The AI layer drafts structured figure plans on the server,
+            suggests local assets, and critiques layout clarity without exposing your API key in the browser.
           </p>
           <div className="hero__actions">
             <button
@@ -797,23 +1171,123 @@ function App() {
         <aside className="workspace__sidebar">
           <div className="panel">
             <div className="panel__head">
-              <h3>Quick composer</h3>
-              <span>Mind the Graph-style briefing</span>
+              <h3>AI copilot</h3>
+              <span>{aiStatus.checking ? "Checking server" : aiStatus.configured ? aiStatus.model : "Offline"}</span>
             </div>
             <textarea
               value={brief}
               onChange={(event) => setBrief(event.target.value)}
               placeholder="Describe the figure you need: pathway, assay workflow, graphical abstract, anatomy plate..."
             />
+            <p className="helper-copy">
+              {aiStatus.checking
+                ? "Connecting to the local AI service."
+                : aiStatus.configured
+                  ? "Server-side planning keeps the OpenAI key off the client while turning your brief into a structured figure plan."
+                  : aiStatus.error || "Set OPENAI_API_KEY and run the local API server to enable AI drafting and critique."}
+            </p>
             <div className="stack-row">
-              <button type="button" className="primary-button" onClick={draftFromBrief}>
-                Draft from brief
+              <button
+                type="button"
+                className="primary-button"
+                onClick={draftWithAi}
+                disabled={aiBusy.planning}
+              >
+                {aiBusy.planning ? "Drafting..." : "AI draft"}
+              </button>
+              <button type="button" className="secondary-button" onClick={draftFromBrief}>
+                Quick draft
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={critiqueWithAi}
+                disabled={aiBusy.critique}
+              >
+                {aiBusy.critique ? "Reviewing..." : "AI critique"}
               </button>
               <button type="button" className="ghost-button" onClick={resetProject}>
                 Reset
               </button>
             </div>
+            {aiPlan ? (
+              <div className="ai-summary">
+                <div className="panel__head">
+                  <h4>{aiPlan.title}</h4>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => copyTextValue(aiPlan.captionDraft, "Copied AI caption draft")}
+                  >
+                    Copy caption
+                  </button>
+                </div>
+                <p>{aiPlan.summary}</p>
+                <div className="ai-pill-row">
+                  <span className="ai-pill">{aiPlan.templateId}</span>
+                  <span className="ai-pill">{aiPlan.panelSequence.length} panels</span>
+                </div>
+                <div className="ai-list">
+                  {aiPlan.callouts.map((callout) => (
+                    <div key={callout} className="ai-list__item">
+                      {callout}
+                    </div>
+                  ))}
+                </div>
+                <p className="helper-copy">Next step: {aiPlan.nextStep}</p>
+              </div>
+            ) : null}
           </div>
+
+          {aiSuggestions.length ? (
+            <div className="panel">
+              <div className="panel__head">
+                <h3>AI asset suggestions</h3>
+                <span>{aiSuggestions.length} prompts</span>
+              </div>
+              <div className="ai-suggestion-list">
+                {aiSuggestions.map((suggestion) => (
+                  <article key={`${suggestion.query}-${suggestion.preferredSourceBucket}`} className="ai-suggestion">
+                    <div className="ai-suggestion__head">
+                      <div>
+                        <h4>{suggestion.query}</h4>
+                        <p>{suggestion.rationale}</p>
+                      </div>
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => focusSuggestionSearch(suggestion)}
+                      >
+                        Focus search
+                      </button>
+                    </div>
+                    <div className="ai-pill-row">
+                      <span className="ai-pill">{suggestion.preferredSourceBucket}</span>
+                    </div>
+                    <div className="ai-match-list">
+                      {suggestion.matches.length ? (
+                        suggestion.matches.slice(0, 2).map((asset) => (
+                          <button
+                            key={asset.id}
+                            type="button"
+                            className="ai-match-card"
+                            onClick={() => addAssetToCanvas(asset)}
+                          >
+                            <strong>{asset.title}</strong>
+                            <span>{asset.sourceLabel}</span>
+                          </button>
+                        ))
+                      ) : (
+                        <p className="helper-copy">
+                          No local matches yet. Try importing a custom asset or broadening the search.
+                        </p>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           <div className="panel">
             <div className="panel__head">
@@ -1456,6 +1930,63 @@ function App() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel__head">
+              <h3>AI critique</h3>
+              <span>{aiCritique ? "Art direction" : "Ready when you are"}</span>
+            </div>
+            {aiCritique ? (
+              <div className="inspector-stack">
+                <p className="helper-copy">{aiCritique.overall}</p>
+                <div className="ai-list">
+                  {aiCritique.strengths.map((strength) => (
+                    <div key={strength} className="ai-list__item">
+                      {strength}
+                    </div>
+                  ))}
+                </div>
+                <div className="ai-issue-list">
+                  {aiCritique.issues.map((issue) => (
+                    <article key={`${issue.severity}-${issue.title}`} className="ai-issue">
+                      <div className="ai-issue__head">
+                        <strong>{issue.title}</strong>
+                        <span className={`severity-chip severity-chip--${issue.severity}`}>
+                          {issue.severity}
+                        </span>
+                      </div>
+                      <p>{issue.recommendation}</p>
+                    </article>
+                  ))}
+                </div>
+                <div className="ai-pill-row">
+                  {aiCritique.complianceRisks.map((risk) => (
+                    <span key={risk} className="ai-pill">
+                      {risk}
+                    </span>
+                  ))}
+                </div>
+                <div className="ai-list">
+                  {aiCritique.missingAssetOpportunities.map((item) => (
+                    <div key={`${item.query}-${item.preferredSourceBucket}`} className="ai-list__item">
+                      {item.query} - {item.reason}
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => copyTextValue(aiCritique.captionRevision, "Copied revised caption")}
+                >
+                  Copy revised caption
+                </button>
+              </div>
+            ) : (
+              <p className="helper-copy">
+                Run AI critique to review hierarchy, panel flow, asset provenance, and caption quality against the current board.
+              </p>
+            )}
           </div>
 
           <div className="panel">

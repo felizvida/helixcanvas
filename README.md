@@ -5,30 +5,76 @@
 <h1 align="center">HelixCanvas</h1>
 
 <p align="center">
-  A modern biomedical illustration studio for creating publication-ready research figures from open libraries and user-owned imports.
+  AI-assisted biomedical illustration studio for publication-ready research figures.
 </p>
 
 <p align="center">
-  Bioicons + Servier Medical Art + drag-and-drop composition + SVG export
+  Open libraries, source-aware imports, structured AI planning, and export-ready composition in one workspace.
 </p>
 
-## Overview
+## What HelixCanvas Is
 
-HelixCanvas is a polished concept for a biomedical figure SaaS. It combines a searchable asset library, a publication-focused composition canvas, and source-aware attribution guidance so researchers can move from raw icon libraries to finished diagrams faster.
+HelixCanvas is a product-style biomedical figure studio that combines:
 
-## What It Does
+- a searchable open illustration library based on **Bioicons**
+- curated **Servier Medical Art** assets and kit links
+- a safe import lane for **user-owned FigureLabs exports**
+- a drag-and-drop editor for research diagrams
+- a **server-side AI copilot** that drafts layouts and critiques figure clarity
 
-- Unifies **Bioicons** into a searchable in-app figure library with preserved per-asset licensing metadata.
-- Surfaces the **Servier-authored vector subset** already represented in Bioicons.
-- Adds **official Servier Medical Art PPTX kit links** and curated official raster examples.
-- Supports **user-owned FigureLabs imports** by upload or URL, without bundling unclear third-party gallery assets.
-- Provides a studio-style editor with templates, text, connectors, layering, resizing, and SVG or JSON export.
+The goal is simple: help researchers move from a rough scientific idea to a clean, publication-ready visual without losing track of source provenance or attribution.
 
-## Why FigureLabs Is Import-Only
+For the deeper product rationale and architecture, see [docs/PRODUCT_OVERVIEW.md](/Users/liux17/codex/figurender/docs/PRODUCT_OVERVIEW.md).
 
-FigureLabs is integrated as a safe import lane rather than a bundled stock library. Public product pages clearly present the service, but this project does not assume the public gallery is openly licensable for redistribution as part of a built-in corpus. If you own the export, you can bring it into HelixCanvas and compose with it.
+## Why It Matters
 
-## Run Locally
+Most biomedical illustration tools fall into one of two buckets:
+
+- polished editors with closed or unclear asset provenance
+- open asset collections without a strong composition workflow
+
+HelixCanvas is designed to bridge that gap. It treats **library provenance, licensing, and figure composition** as part of the same workflow, then uses AI in a controlled way to accelerate planning rather than replace editorial judgment.
+
+## Core Capabilities
+
+- Unified in-app library for Bioicons assets with preserved licensing metadata
+- Servier-authored vector subset surfaced through Bioicons
+- Official Servier Medical Art raster examples and PPTX kit links
+- Drag-and-drop canvas with text, shapes, connectors, layers, resizing, and export
+- FigureLabs handled as **import-only**, avoiding redistribution of unclear third-party gallery assets
+- AI drafting from a research brief into a structured figure plan
+- AI critique for hierarchy, narrative flow, provenance risk, and caption quality
+- Citation bundle export for attribution-ready outputs
+
+## AI Design
+
+HelixCanvas uses AI in a way that is architecturally meaningful:
+
+- The OpenAI API key stays on the **server**, not in the browser.
+- `POST /api/ai/plan` converts a research brief into structured JSON: template choice, panel plan, callouts, compliance notes, caption draft, and asset queries.
+- `POST /api/ai/critique` reviews the current board and returns actionable design feedback.
+- The client remains deterministic: it applies plans to the local canvas, matches suggested assets against the local library, and preserves export/citation behavior.
+
+This design keeps AI useful without making the editor opaque or unsafe.
+
+## Library Strategy
+
+### Bioicons
+
+Bioicons is the main searchable vector library. Asset-level source and license metadata are preserved in the generated manifest.
+
+### Servier Medical Art
+
+Servier is surfaced in two ways:
+
+- Servier-authored vectors already represented in Bioicons
+- official Servier raster assets and downloadable PPTX kits
+
+### FigureLabs
+
+FigureLabs is intentionally treated as a **user-owned import lane**. HelixCanvas does not bundle public FigureLabs gallery content as a built-in stock corpus because reuse rights are not assumed to be openly redistributable.
+
+## Local Development
 
 1. Clone Bioicons locally:
 
@@ -42,21 +88,40 @@ git clone --depth 1 https://github.com/duerrsimon/bioicons /tmp/bioicons
 BIOICONS_DIR=/tmp/bioicons npm run build:library
 ```
 
-3. Install dependencies and run the app:
+3. Configure environment variables:
+
+```bash
+export OPENAI_API_KEY=your_key_here
+```
+
+Use [.env.example](/Users/liux17/codex/figurender/.env.example) as the reference for local configuration.
+
+4. Install dependencies and start the app plus local API:
 
 ```bash
 npm install
 npm run dev
 ```
 
+5. Build for production:
+
+```bash
+npm run build
+npm start
+```
+
 ## Project Structure
 
-- `src/App.jsx` — main SaaS-style studio experience
-- `src/data/servier.js` — Servier metadata, kit links, and source policies
-- `src/data/templates.js` — starter figure templates
+- `src/App.jsx` — main editor experience
+- `src/lib/ai.js` — browser client for local AI endpoints
+- `src/data/templates.js` — starter layouts and design presets
+- `src/data/servier.js` — Servier metadata, source policy, and kit links
+- `src/lib/exporters.js` — SVG, JSON, and attribution export helpers
+- `server/index.mjs` — local API server and production host
+- `server/aiService.mjs` — OpenAI orchestration and structured output contracts
 - `scripts/generate-bioicons-index.mjs` — Bioicons indexing pipeline
-- `public/data/bioicons.library.json` — generated searchable Bioicons manifest
-- `docs/helixcanvas-banner.svg` — GitHub README banner
+- `public/data/bioicons.library.json` — generated searchable asset manifest
+- `docs/PRODUCT_OVERVIEW.md` — long-form product and architecture document
 
 ## Sources
 
@@ -69,5 +134,6 @@ npm run dev
 ## Notes
 
 - Bioicons licenses vary by asset and are preserved in the generated manifest.
-- Servier Medical Art content requires attribution and is surfaced with guidance in the UI.
-- The editor is intentionally product-like and visually opinionated, but it is still a starter implementation rather than a finished commercial platform.
+- Servier Medical Art content requires attribution and is surfaced with compliance guidance.
+- AI suggestions are intentionally **source-aware** and designed to support, not override, editorial control.
+- This is a strong MVP and product direction, not yet a full commercial SaaS deployment.

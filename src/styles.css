@@ -196,6 +196,10 @@ code {
   color: var(--muted);
 }
 
+.helper-copy {
+  line-height: 1.55;
+}
+
 .eyebrow {
   display: inline-block;
   font-size: 0.74rem;
@@ -263,6 +267,13 @@ textarea {
   box-shadow: var(--shadow);
 }
 
+button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+  transform: none;
+  box-shadow: none;
+}
+
 .upload-button {
   display: inline-flex;
   align-items: center;
@@ -283,7 +294,9 @@ textarea {
 .asset-grid,
 .kit-list,
 .layer-list,
-.source-list {
+.source-list,
+.ai-suggestion-list,
+.ai-issue-list {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -295,11 +308,102 @@ textarea {
 .asset-card,
 .kit-card,
 .policy-card,
-.source-box {
+.source-box,
+.ai-summary,
+.ai-suggestion,
+.ai-issue {
   border: 1px solid rgba(17, 33, 46, 0.08);
   border-radius: 22px;
   background: rgba(255, 255, 255, 0.78);
   padding: 12px;
+}
+
+.ai-summary p,
+.ai-suggestion p,
+.ai-issue p {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+
+.ai-pill-row,
+.ai-list,
+.ai-match-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.ai-pill,
+.severity-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.ai-pill {
+  background: rgba(15, 118, 110, 0.1);
+  color: var(--accent);
+}
+
+.ai-list__item {
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(17, 33, 46, 0.08);
+  padding: 10px 12px;
+  font-size: 0.92rem;
+}
+
+.ai-suggestion__head,
+.ai-issue__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.ai-summary h4,
+.ai-suggestion h4 {
+  margin: 0;
+}
+
+.ai-match-card {
+  flex: 1 1 180px;
+  min-width: 0;
+  border: 1px solid rgba(17, 33, 46, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 12px;
+  text-align: left;
+}
+
+.ai-match-card strong,
+.ai-match-card span {
+  display: block;
+}
+
+.ai-match-card span {
+  margin-top: 4px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.severity-chip--high {
+  background: rgba(234, 128, 96, 0.14);
+  color: #a64a2e;
+}
+
+.severity-chip--medium {
+  background: rgba(144, 168, 95, 0.18);
+  color: #5d7130;
+}
+
+.severity-chip--low {
+  background: rgba(15, 118, 110, 0.12);
+  color: var(--accent);
 }
 
 .asset-card__preview {
