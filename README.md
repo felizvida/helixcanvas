@@ -5,58 +5,60 @@
 <h1 align="center">HelixCanvas</h1>
 
 <p align="center">
-  AI-assisted biomedical illustration studio for publication-ready research figures.
+  Open-source, local-first biomedical illustration studio for publication-ready research figures.
 </p>
 
 <p align="center">
-  Open libraries, source-aware imports, structured AI planning, and export-ready composition in one workspace.
+  Open libraries, provenance-first imports, optional AI planning, and export-ready composition in one workspace.
 </p>
 
 ## What HelixCanvas Is
 
-HelixCanvas is a product-style biomedical figure studio that combines:
+HelixCanvas is a local-first biomedical figure tool that combines:
 
 - a searchable open illustration library based on **Bioicons**
 - curated **Servier Medical Art** assets and kit links
 - a safe import lane for **user-owned FigureLabs exports**
 - a drag-and-drop editor for research diagrams
-- a **server-side AI copilot** that drafts layouts and critiques figure clarity
+- an **optional** server-side AI copilot for planning and critique
 
-The goal is simple: help researchers move from a rough scientific idea to a clean, publication-ready visual without losing track of source provenance or attribution.
+The goal is simple: help researchers move from a rough scientific idea to a clean, publication-ready visual without losing track of source provenance or attribution, and without requiring a paid platform.
 
-For the deeper product rationale and architecture, see [docs/PRODUCT_OVERVIEW.md](/Users/liux17/codex/figurender/docs/PRODUCT_OVERVIEW.md).
+## Open-Source Direction
 
-## Why It Matters
+HelixCanvas is being shaped as a public-good tool:
 
-Most biomedical illustration tools fall into one of two buckets:
+- zero-cost by default
+- local-first and useful without AI
+- transparent about sources, licenses, and attribution
+- open to community packs and contributor improvements
+- designed to stay maintainable without a required hosted backend
 
-- polished editors with closed or unclear asset provenance
-- open asset collections without a strong composition workflow
+The long-term ambition is closer to an Inkscape-for-biomedical-figures than a commercial SaaS editor.
 
-HelixCanvas is designed to bridge that gap. It treats **library provenance, licensing, and figure composition** as part of the same workflow, then uses AI in a controlled way to accelerate planning rather than replace editorial judgment.
-
-## Core Capabilities
+## Current Capabilities
 
 - Unified in-app library for Bioicons assets with preserved licensing metadata
 - Servier-authored vector subset surfaced through Bioicons
 - Official Servier Medical Art raster examples and PPTX kit links
 - Drag-and-drop canvas with undo/redo, keyboard nudging, snap-to-grid, layering, resizing, and export
+- Local project open/save flows with recovery drafts for destructive actions
 - Asset curation features including saved assets, recent assets, and relevance-aware library sorting
 - FigureLabs handled as **import-only**, avoiding redistribution of unclear third-party gallery assets
-- AI drafting from a research brief into a structured figure plan
-- AI critique for hierarchy, narrative flow, provenance risk, and caption quality
+- Optional AI drafting from a research brief into a structured figure plan
+- Optional AI critique for hierarchy, narrative flow, provenance risk, and caption quality
 - Citation bundle export for attribution-ready outputs
 
 ## AI Design
 
-HelixCanvas uses AI in a way that is architecturally meaningful:
+AI is architecturally meaningful in HelixCanvas, but intentionally optional.
 
 - The OpenAI API key stays on the **server**, not in the browser.
-- `POST /api/ai/plan` converts a research brief into structured JSON: template choice, panel plan, callouts, compliance notes, caption draft, and asset queries.
+- `POST /api/ai/plan` converts a research brief into structured JSON for a figure plan.
 - `POST /api/ai/critique` reviews the current board and returns actionable design feedback.
-- The client remains deterministic: it applies plans to the local canvas, matches suggested assets against the local library, and preserves export/citation behavior.
+- The client remains deterministic: it applies plans locally, matches suggested assets against the local library, and preserves export and attribution behavior.
 
-This design keeps AI useful without making the editor opaque or unsafe.
+This keeps AI useful without making the editor opaque, costly by default, or required for baseline workflows.
 
 ## Library Strategy
 
@@ -75,6 +77,13 @@ Servier is surfaced in two ways:
 
 FigureLabs is intentionally treated as a **user-owned import lane**. HelixCanvas does not bundle public FigureLabs gallery content as a built-in stock corpus because reuse rights are not assumed to be openly redistributable.
 
+## Project Docs
+
+- [Open-source roadmap](./docs/OSS_ROADMAP.md)
+- [Product overview](./docs/PRODUCT_OVERVIEW.md)
+- [Contributing guide](./CONTRIBUTING.md)
+- [Code of conduct](./CODE_OF_CONDUCT.md)
+
 ## Local Development
 
 1. Clone Bioicons locally:
@@ -89,43 +98,43 @@ git clone --depth 1 https://github.com/duerrsimon/bioicons /tmp/bioicons
 BIOICONS_DIR=/tmp/bioicons npm run build:library
 ```
 
-3. Configure environment variables:
+3. Install dependencies:
+
+```bash
+npm install
+```
+
+4. Start the app plus local API:
+
+```bash
+npm run dev
+```
+
+5. Optionally configure AI:
 
 ```bash
 export OPENAI_API_KEY=your_key_here
 ```
 
-Use [.env.example](/Users/liux17/codex/figurender/.env.example) as the reference for local configuration.
-
-4. Install dependencies and start the app plus local API:
-
-```bash
-npm install
-npm run dev
-```
-
-5. Build for production:
-
-```bash
-npm run build
-npm start
-```
+Use [.env.example](./.env.example) as the reference for local configuration. If you skip this step, the editor still works and AI features remain disabled.
 
 ## Quality Checks
 
 Run the local verification suite with:
 
 ```bash
-npm test
-npm run build
+npm run check
 ```
 
-GitHub Actions now runs the same checks on pushes to `main` and on pull requests through [.github/workflows/ci.yml](/Users/liux17/codex/figurender/.github/workflows/ci.yml).
+GitHub Actions runs the same checks on pushes to `main` and on pull requests through [`.github/workflows/ci.yml`](./.github/workflows/ci.yml).
 
 ## Project Structure
 
 - `src/App.jsx` — main editor experience
 - `src/lib/ai.js` — browser client for local AI endpoints
+- `src/lib/assets.js` — asset ranking, recents, favorites, and suggestion helpers
+- `src/lib/projectFiles.js` — local project file helpers and validation
+- `src/lib/history.js` — project history helpers
 - `src/data/templates.js` — starter layouts and design presets
 - `src/data/servier.js` — Servier metadata, source policy, and kit links
 - `src/lib/exporters.js` — SVG, JSON, and attribution export helpers
@@ -133,7 +142,17 @@ GitHub Actions now runs the same checks on pushes to `main` and on pull requests
 - `server/aiService.mjs` — OpenAI orchestration and structured output contracts
 - `scripts/generate-bioicons-index.mjs` — Bioicons indexing pipeline
 - `public/data/bioicons.library.json` — generated searchable asset manifest
-- `docs/PRODUCT_OVERVIEW.md` — long-form product and architecture document
+
+## Community
+
+If you want to help, good contribution areas include:
+
+- editor polish and interaction design
+- asset metadata and pack structure
+- export fidelity and citation workflows
+- documentation and tutorials
+- accessibility improvements
+- optional AI provider integrations
 
 ## Sources
 
@@ -148,4 +167,4 @@ GitHub Actions now runs the same checks on pushes to `main` and on pull requests
 - Bioicons licenses vary by asset and are preserved in the generated manifest.
 - Servier Medical Art content requires attribution and is surfaced with compliance guidance.
 - AI suggestions are intentionally **source-aware** and designed to support, not override, editorial control.
-- This is a strong MVP and product direction, not yet a full commercial SaaS deployment.
+- HelixCanvas is being developed as an open-source public-good tool, not as a commercial SaaS product.

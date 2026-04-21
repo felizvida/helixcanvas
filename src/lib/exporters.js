@@ -67,7 +67,7 @@ export function projectToSvg(project) {
   const width = project.board.width;
   const height = project.board.height;
   const background = project.board.background ?? "#f7f2ea";
-  const nodes = project.nodes.map(renderNode).join("");
+  const nodes = project.nodes.filter((node) => !node.hidden).map(renderNode).join("");
   const connectors = project.connectors.map(renderConnector).join("");
 
   return [
@@ -95,6 +95,10 @@ export function collectProjectCitations(project) {
   const citations = [];
 
   for (const node of project.nodes) {
+    if (node.hidden) {
+      continue;
+    }
+
     if (node.citation && !citations.includes(node.citation)) {
       citations.push(node.citation);
     }

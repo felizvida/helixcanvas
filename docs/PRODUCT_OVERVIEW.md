@@ -2,15 +2,15 @@
 
 ## Executive Summary
 
-HelixCanvas is an AI-assisted biomedical illustration platform for researchers who need publication-ready figures built from open or user-owned assets. It combines a curated figure library, a visual composition workspace, attribution-aware exports, and a server-side AI copilot that helps users plan and critique figures without exposing model credentials in the browser.
+HelixCanvas is a local-first, open-source biomedical illustration project for researchers who need publication-ready figures built from open or user-owned assets. It combines a curated figure library, a visual composition workspace, attribution-aware exports, and an optional server-side AI copilot that helps users plan and critique figures without exposing model credentials in the browser.
 
-The product sits in the gap between:
+The project sits in the gap between:
 
 - general-purpose design tools that are not source-aware for scientific publishing
 - biomedical asset libraries that offer raw components without an integrated composition workflow
-- closed illustration platforms that may be strong on UX but weaker on transparency around provenance or extensibility
+- closed illustration platforms that may be strong on UX but weaker on transparency, provenance, or extensibility
 
-HelixCanvas is designed to make provenance, composition, and AI-assisted planning feel like one system.
+HelixCanvas is designed to make provenance, composition, and optional AI-assisted planning feel like one system while remaining useful with zero paid infrastructure.
 
 ## Product Vision
 
@@ -21,7 +21,9 @@ Researchers should be able to describe a figure in the language of science and r
 3. a workspace for editing, refining, and annotating the figure
 4. attribution-ready output for publication or presentation
 
-The long-term vision is a figure operating system for biomedical communication: part editor, part library, part scientific art director.
+The long-term vision is a public-good figure operating system for biomedical communication: part editor, part library, part scientific art director.
+
+The project should mature more like Blender, Inkscape, or Krita than like a hosted SaaS design product.
 
 ## Intended Users
 
@@ -48,22 +50,26 @@ Every asset should carry provenance and licensing context with it through the wo
 
 AI is used to produce explicit plans, critiques, and search prompts, not hidden logic or arbitrary auto-design.
 
-### 3. Editorial control stays with the user
+### 3. The project must remain useful without AI
+
+AI is optional. Users should still be able to search, compose, annotate, export, and attribute figures with no model configured.
+
+### 4. Editorial control stays with the user
 
 The final figure remains manually editable. AI helps accelerate direction and review; it does not lock the user into opaque generation.
 
-### 4. Scientific taste matters
+### 5. Scientific taste matters
 
 Publication-ready figures need hierarchy, restraint, clarity, and credibility. The product should feel intentional, not generic.
 
 ## Core Workflow
 
 1. The user describes the target figure in plain language.
-2. The AI planner proposes a structured figure architecture.
+2. The optional AI planner proposes a structured figure architecture.
 3. The client applies that plan to a local editable canvas.
 4. The app suggests matching assets from Bioicons, Servier-derived vectors, Servier originals, or user imports.
 5. The user edits text, layout, connectors, and scale.
-6. The AI critique reviews the draft for clarity and compliance issues.
+6. The optional AI critique reviews the draft for clarity and compliance issues.
 7. The figure is exported as SVG or JSON, with attribution text available for publication workflows.
 
 ## Current Feature Set
@@ -83,7 +89,12 @@ Publication-ready figures need hierarchy, restraint, clarity, and credibility. T
 - shape nodes
 - connectors
 - layer order controls
+- lock and hide controls
 - selection inspector
+- undo and redo
+- asset favorites and recents
+- local project open/save flows
+- recovery draft support for destructive actions
 - SVG export
 - JSON export
 - citation bundle export
@@ -100,7 +111,7 @@ Publication-ready figures need hierarchy, restraint, clarity, and credibility. T
 
 ## Why FigureLabs Is Import-Only
 
-FigureLabs is integrated as a user-owned import mechanism rather than a bundled built-in stock library. The product does not assume that public FigureLabs gallery content is openly licensable for redistribution. This keeps HelixCanvas on firmer ground with respect to provenance and reuse while still supporting teams that already own or export assets from FigureLabs.
+FigureLabs is integrated as a user-owned import mechanism rather than a bundled built-in stock library. The project does not assume that public FigureLabs gallery content is openly licensable for redistribution. This keeps HelixCanvas on firmer ground with respect to provenance and reuse while still supporting people who already own or export assets from FigureLabs.
 
 ## Architecture
 
@@ -136,6 +147,7 @@ flowchart LR
 - supports two primary contracts:
   - figure planning
   - figure critique
+- is optional rather than required for baseline usage
 
 ### Asset pipeline
 
@@ -143,13 +155,13 @@ flowchart LR
 - asset metadata preserved in `public/data/bioicons.library.json`
 - Servier policy and kit metadata defined in source data files
 
-## Why this architecture is meaningful
+## Why This Architecture Is Meaningful
 
-The AI layer is not a thin “ask a chatbot” feature. It influences architecture in three important ways:
+The AI layer is not a thin "ask a chatbot" feature. When enabled, it influences architecture in three important ways:
 
 ### 1. Server-side key handling
 
-The API key never enters the browser runtime. This is required for a product intended to be used seriously.
+The API key never enters the browser runtime.
 
 ### 2. Structured outputs
 
@@ -159,22 +171,22 @@ The AI returns typed figure plans and critiques that the app can render predicta
 
 The client, not the model, decides how to apply a plan to the canvas, how to match assets locally, and how exports are produced. This preserves trust and debuggability.
 
-## Competitive Positioning
+## Project Position
 
 HelixCanvas is not trying to outdo specialized scientific illustration products solely on asset volume. Its differentiation is:
 
 - openness and transparency around asset sourcing
-- server-side AI integration with structured planning
+- optional AI integration with structured planning
 - publication-aware attribution workflow
-- extensibility for user-owned imports
+- extensibility for user-owned imports and future asset packs
 
-The product is especially compelling for teams that care about provenance, reproducibility, or open-science alignment.
+The project is especially compelling for people and teams that care about provenance, reproducibility, open-science alignment, or zero-cost access.
 
 ## Risks and Open Questions
 
 ### Asset licensing complexity
 
-Even open libraries have heterogeneous licensing. The product should continue surfacing provenance clearly and avoid flattening all assets into a single implied license.
+Even open libraries have heterogeneous licensing. The project should continue surfacing provenance clearly and avoid flattening all assets into a single implied license.
 
 ### AI overreach
 
@@ -184,38 +196,26 @@ The model must not fabricate scientific claims or overly confident annotations. 
 
 The current asset suggestion layer is keyword-based on the client. A future version could use embeddings or a hybrid retrieval strategy for better matching.
 
-### Production deployment
+### Open-source maintainability
 
-The current implementation is a strong local/product MVP. Multi-user auth, persistence, collaboration, billing, and hosted storage remain future work.
+The project still needs stronger contributor workflows, asset-pack conventions, and clearer public documentation to become durable as a community tool.
 
 ## Near-Term Roadmap
 
-### Product
+See [OSS_ROADMAP.md](./OSS_ROADMAP.md) for the active milestone plan.
 
-- richer templates for graphical abstracts, pathways, and assay timelines
-- multi-panel board layouts
-- reusable figure themes
-- better caption and legend workflows
+Near-term priorities are:
 
-### AI
-
-- asset-ranking improvements
-- provenance-aware generation constraints
-- manuscript-to-figure planning from uploaded text
-- figure style consistency checks
-
-### Platform
-
-- hosted persistence
-- team workspaces
-- version history
-- shareable review links
+- editor polish and local project reliability
+- asset manifest and pack maturity
+- contributor experience and public documentation
+- optional AI provider boundaries
 
 ## Repository Guide
 
 For quick onboarding, use the README as the GitHub front door.
 
-For product context, architecture rationale, and roadmap thinking, use this document.
+For product context, architecture rationale, and project direction, use this document.
 
 Together they should make the repository understandable to:
 

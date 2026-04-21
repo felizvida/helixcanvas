@@ -16,12 +16,19 @@ import {
   redoHistoryState,
   undoHistoryState,
 } from "./lib/history.js";
+import {
+  createProjectDocument,
+  parseProjectDocument,
+  suggestProjectFilename,
+} from "./lib/projectFiles.js";
 
 const STORAGE_KEYS = {
   project: "helixcanvas-project-v1",
+  projectMeta: "helixcanvas-project-meta-v1",
   importedAssets: "helixcanvas-imported-assets-v1",
   favoriteAssets: "helixcanvas-favorite-assets-v1",
   recentAssets: "helixcanvas-recent-assets-v1",
+  recoveryDraft: "helixcanvas-recovery-draft-v1",
 };
 
 const SOURCE_FILTERS = [
@@ -58,28 +65,42 @@ function createId(prefix) {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function withNodeState(node) {
+  return {
+    ...node,
+    rotation: node.rotation ?? 0,
+    opacity: node.opacity ?? 1,
+    strokeWidth: node.strokeWidth ?? 2,
+    hidden: Boolean(node.hidden),
+    locked: Boolean(node.locked),
+  };
+}
+
+function withConnectorState(connector, strokeFallback = "#155e75") {
+  return {
+    id: connector.id ?? createId("connector"),
+    stroke: connector.stroke ?? strokeFallback,
+    strokeWidth: connector.strokeWidth ?? 4,
+    from: { ...connector.from },
+    to: { ...connector.to },
+  };
+}
+
 function normalizeTemplate(template) {
   const nodeIds = new Map();
 
   const nodes = template.nodes.map((node) => {
     const id = createId("node");
     nodeIds.set(node, id);
-    return {
+    return withNodeState({
       id,
-      rotation: node.rotation ?? 0,
-      opacity: node.opacity ?? 1,
-      strokeWidth: node.strokeWidth ?? 2,
       ...node,
-    };
+    });
   });
 
-  const connectors = template.connectors.map((connector) => ({
-    id: createId("connector"),
-    stroke: connector.stroke ?? template.palette.accent,
-    strokeWidth: connector.strokeWidth ?? 4,
-    from: { ...connector.from },
-    to: { ...connector.to },
-  }));
+  const connectors = template.connectors.map((connector) =>
+    withConnectorState({ id: createId("connector"), ...connector }, template.palette.accent),
+  );
 
   return {
     id: createId("project"),
@@ -98,6 +119,34 @@ function normalizeTemplate(template) {
 
 function createStarterProject() {
   return normalizeTemplate(TEMPLATES[0]);
+}
+
+function prepareLoadedProject(project) {
+  const fallbackTemplate = inferTemplateFromBrief(`${project.name ?? ""} ${project.brief ?? ""}`) ?? TEMPLATES[0];
+
+  return {
+    id: project.id ?? createId("project"),
+    name: project.name ?? "Recovered HelixCanvas project",
+    brief: project.brief ?? "",
+    board: {
+      ...BOARD_PRESETS,
+      ...project.board,
+    },
+    palette: {
+      ...fallbackTemplate.palette,
+      ...(project.palette ?? {}),
+    },
+    nodes: (project.nodes ?? []).map((node) =>
+      withNodeState({
+        id: node.id ?? createId("node"),
+        ...node,
+      }),
+    ),
+    connectors: (project.connectors ?? []).map((connector) =>
+      withConnectorState(connector, project.palette?.accent ?? fallbackTemplate.palette.accent),
+    ),
+    updatedAt: project.updatedAt ?? new Date().toISOString(),
+  };
 }
 
 function describeSourcePolicy(sourceId) {
@@ -160,7 +209,7 @@ function makeAssetNode(asset, position = { x: 160, y: 180 }) {
   const defaultWidth = asset.assetType === "png" ? 220 : 180;
   const defaultHeight = asset.assetType === "png" ? 160 : 180;
 
-  return {
+  return withNodeState({
     id: createId("node"),
     assetId: asset.id,
     type: "asset",
@@ -175,13 +224,11 @@ function makeAssetNode(asset, position = { x: 160, y: 180 }) {
     y: position.y,
     w: defaultWidth,
     h: defaultHeight,
-    rotation: 0,
-    opacity: 1,
-  };
+  });
 }
 
 function makeShapeNode(shape, text, position) {
-  return {
+  return withNodeState({
     id: createId("node"),
     type: "shape",
     shape,
@@ -194,13 +241,11 @@ function makeShapeNode(shape, text, position) {
     y: position.y,
     w: shape === "circle" ? 160 : 220,
     h: shape === "circle" ? 160 : 86,
-    rotation: 0,
-    opacity: 1,
-  };
+  });
 }
 
 function makeTextNode(position) {
-  return {
+  return withNodeState({
     id: createId("node"),
     type: "text",
     text: "Add annotation",
@@ -210,9 +255,7 @@ function makeTextNode(position) {
     x: position.x,
     y: position.y,
     w: 260,
-    rotation: 0,
-    opacity: 1,
-  };
+  });
 }
 
 function findNode(project, id) {
@@ -241,6 +284,7 @@ function openExternalLink(href) {
 }
 
 function buildProjectSummaryForAi(project) {
+  const visibleNodes = project.nodes.filter((node) => !node.hidden);
   const citations = collectProjectCitations(project);
 
   return {
@@ -248,13 +292,13 @@ function buildProjectSummaryForAi(project) {
     brief: project.brief,
     board: project.board,
     counts: {
-      nodes: project.nodes.length,
+      nodes: visibleNodes.length,
       connectors: project.connectors.length,
-      assets: project.nodes.filter((node) => node.type === "asset").length,
-      text: project.nodes.filter((node) => node.type === "text").length,
-      shapes: project.nodes.filter((node) => node.type === "shape").length,
+      assets: visibleNodes.filter((node) => node.type === "asset").length,
+      text: visibleNodes.filter((node) => node.type === "text").length,
+      shapes: visibleNodes.filter((node) => node.type === "shape").length,
     },
-    nodes: project.nodes.slice(0, 8).map((node) => ({
+    nodes: visibleNodes.slice(0, 8).map((node) => ({
       type: node.type,
       title: node.title ?? "",
       text: node.text ?? "",
@@ -329,7 +373,7 @@ function createPlanProject(plan) {
     const shapeH = referenceNode?.h ?? 74;
     const theme = getEmphasisTheme(baseProject.palette, panel.emphasis);
 
-    panelNodes.push({
+    panelNodes.push(withNodeState({
       id: createId("node"),
       type: "shape",
       shape: "card",
@@ -342,11 +386,9 @@ function createPlanProject(plan) {
       y: shapeY,
       w: shapeW,
       h: shapeH,
-      rotation: 0,
-      opacity: 1,
-    });
+    }));
 
-    detailNodes.push({
+    detailNodes.push(withNodeState({
       id: createId("node"),
       type: "text",
       text: panel.body,
@@ -356,9 +398,7 @@ function createPlanProject(plan) {
       x: shapeX,
       y: shapeY + shapeH + 28,
       w: horizontalWorkflow ? shapeW : Math.min(shapeW + 48, 320),
-      rotation: 0,
-      opacity: 1,
-    });
+    }));
   });
 
   const notesStartY =
@@ -369,7 +409,7 @@ function createPlanProject(plan) {
         : 610;
 
   plan.callouts.forEach((callout, index) => {
-    noteNodes.push({
+    noteNodes.push(withNodeState({
       id: createId("node"),
       type: "text",
       text: `- ${callout}`,
@@ -379,12 +419,10 @@ function createPlanProject(plan) {
       x: 94,
       y: notesStartY + index * 28,
       w: 760,
-      rotation: 0,
-      opacity: 1,
-    });
+    }));
   });
 
-  const titleNode = {
+  const titleNode = withNodeState({
     id: createId("node"),
     type: "text",
     text: plan.title,
@@ -394,11 +432,9 @@ function createPlanProject(plan) {
     x: 94,
     y: 72,
     w: 820,
-    rotation: 0,
-    opacity: 1,
-  };
+  });
 
-  const summaryNode = {
+  const summaryNode = withNodeState({
     id: createId("node"),
     type: "text",
     text: plan.figureGoal,
@@ -408,9 +444,7 @@ function createPlanProject(plan) {
     x: 94,
     y: 102,
     w: 860,
-    rotation: 0,
-    opacity: 1,
-  };
+  });
 
   return {
     ...baseProject,
@@ -548,7 +582,17 @@ function App() {
     servierVectorAssets: 0,
   });
   const [project, setProject] = useState(() =>
-    typeof window === "undefined" ? createStarterProject() : parseStoredJson(STORAGE_KEYS.project, createStarterProject()),
+    typeof window === "undefined"
+      ? createStarterProject()
+      : prepareLoadedProject(parseStoredJson(STORAGE_KEYS.project, createStarterProject())),
+  );
+  const [projectFileName, setProjectFileName] = useState(() =>
+    typeof window === "undefined" ? "" : parseStoredJson(STORAGE_KEYS.projectMeta, {}).fileName ?? "",
+  );
+  const [savedProjectUpdatedAt, setSavedProjectUpdatedAt] = useState(() =>
+    typeof window === "undefined"
+      ? null
+      : parseStoredJson(STORAGE_KEYS.projectMeta, {}).savedUpdatedAt ?? null,
   );
   const [importedAssets, setImportedAssets] = useState(() =>
     typeof window === "undefined" ? [] : parseStoredJson(STORAGE_KEYS.importedAssets, []),
@@ -580,6 +624,9 @@ function App() {
   const [aiPlan, setAiPlan] = useState(null);
   const [aiCritique, setAiCritique] = useState(null);
   const [aiSuggestions, setAiSuggestions] = useState([]);
+  const [recoveryDraft, setRecoveryDraft] = useState(() =>
+    typeof window === "undefined" ? null : parseStoredJson(STORAGE_KEYS.recoveryDraft, null),
+  );
   const [aiBusy, setAiBusy] = useState({
     planning: false,
     critique: false,
@@ -588,6 +635,8 @@ function App() {
   const boardRef = useRef(null);
   const historyRef = useRef(createHistoryState());
   const dragHistoryCapturedRef = useRef(false);
+  const projectImportInputRef = useRef(null);
+  const projectFileHandleRef = useRef(null);
   const deferredQuery = useDeferredValue(libraryQuery.trim().toLowerCase());
 
   useEffect(() => {
@@ -640,6 +689,25 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEYS.recentAssets, JSON.stringify(recentAssetIds));
   }, [recentAssetIds]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      STORAGE_KEYS.projectMeta,
+      JSON.stringify({
+        fileName: projectFileName,
+        savedUpdatedAt: savedProjectUpdatedAt,
+      }),
+    );
+  }, [projectFileName, savedProjectUpdatedAt]);
+
+  useEffect(() => {
+    if (!recoveryDraft) {
+      window.localStorage.removeItem(STORAGE_KEYS.recoveryDraft);
+      return;
+    }
+
+    window.localStorage.setItem(STORAGE_KEYS.recoveryDraft, JSON.stringify(recoveryDraft));
+  }, [recoveryDraft]);
 
   useEffect(() => {
     if (!notice) {
@@ -815,6 +883,8 @@ function App() {
     .map((id) => unifiedLibrary.find((asset) => asset.id === id))
     .filter(Boolean)
     .slice(0, 6);
+  const projectFileLabel = projectFileName || suggestProjectFilename(project.name);
+  const hasUnsavedChanges = savedProjectUpdatedAt !== project.updatedAt;
 
   function applyProjectChange(updater, options = {}) {
     const { selection: nextSelection, notice: noticeMessage } = options;
@@ -842,6 +912,175 @@ function App() {
     if (noticeMessage) {
       setNotice(noticeMessage);
     }
+  }
+
+  function stageRecoveryDraft(reason) {
+    setRecoveryDraft({
+      reason,
+      capturedAt: new Date().toISOString(),
+      fileName: projectFileName,
+      savedUpdatedAt: savedProjectUpdatedAt,
+      project,
+    });
+  }
+
+  function replaceProjectWorkspace(nextProject, options = {}) {
+    const preparedProject = prepareLoadedProject(nextProject);
+    const {
+      fileName = "",
+      savedUpdatedAt: savedAt = preparedProject.updatedAt,
+      notice: noticeMessage = "",
+      stageReason = "",
+    } = options;
+
+    if (stageReason) {
+      stageRecoveryDraft(stageReason);
+    }
+
+    historyRef.current = createHistoryState();
+    setHistoryVersion((value) => value + 1);
+    setProject(preparedProject);
+    setSelection(null);
+    setBrief(preparedProject.brief ?? "");
+    setAiPlan(null);
+    setAiCritique(null);
+    setAiSuggestions([]);
+    setProjectFileName(fileName);
+    setSavedProjectUpdatedAt(savedAt);
+
+    if (noticeMessage) {
+      setNotice(noticeMessage);
+    }
+  }
+
+  function restoreRecoveryDraft() {
+    if (!recoveryDraft?.project) {
+      setNotice("No recovery draft is available");
+      return;
+    }
+
+    replaceProjectWorkspace(recoveryDraft.project, {
+      fileName: recoveryDraft.fileName ?? "",
+      savedUpdatedAt: recoveryDraft.savedUpdatedAt ?? null,
+      notice: "Restored recovery draft",
+    });
+  }
+
+  function clearRecoveryDraft() {
+    setRecoveryDraft(null);
+    setNotice("Cleared recovery draft");
+  }
+
+  function requestProjectOpen() {
+    projectImportInputRef.current?.click();
+  }
+
+  async function saveProjectFile(options = {}) {
+    const { saveAs = false } = options;
+    const projectDocument = createProjectDocument(project);
+    const contents = JSON.stringify(projectDocument, null, 2);
+    const fallbackName = projectFileLabel;
+
+    try {
+      if ("showSaveFilePicker" in window) {
+        let handle = projectFileHandleRef.current;
+
+        if (saveAs || !handle) {
+          handle = await window.showSaveFilePicker({
+            suggestedName: fallbackName,
+            types: [
+              {
+                description: "HelixCanvas project",
+                accept: {
+                  "application/json": [".json"],
+                },
+              },
+            ],
+          });
+          projectFileHandleRef.current = handle;
+        }
+
+        const writable = await handle.createWritable();
+        await writable.write(contents);
+        await writable.close();
+
+        setProjectFileName(handle.name || fallbackName);
+        setSavedProjectUpdatedAt(project.updatedAt);
+        setNotice(`Saved ${handle.name || fallbackName}`);
+        return;
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+    }
+
+    downloadText(fallbackName, contents, "application/json");
+    setProjectFileName(fallbackName);
+    setSavedProjectUpdatedAt(project.updatedAt);
+    setNotice(`Downloaded ${fallbackName}`);
+  }
+
+  async function importProjectFromFile(event) {
+    const [file] = event.target.files ?? [];
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      const parsed = parseProjectDocument(await file.text());
+      projectFileHandleRef.current = null;
+      replaceProjectWorkspace(parsed.project, {
+        fileName: file.name,
+        notice: `Opened ${file.name}`,
+        stageReason: `Opened ${file.name}`,
+      });
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not open that project file");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  function toggleNodeHidden(nodeId) {
+    applyProjectChange(
+      (current) => ({
+        ...current,
+        nodes: current.nodes.map((node) =>
+          node.id === nodeId ? { ...node, hidden: !node.hidden } : node,
+        ),
+      }),
+      { selection: { kind: "node", id: nodeId } },
+    );
+  }
+
+  function toggleNodeLocked(nodeId) {
+    applyProjectChange(
+      (current) => ({
+        ...current,
+        nodes: current.nodes.map((node) =>
+          node.id === nodeId ? { ...node, locked: !node.locked } : node,
+        ),
+      }),
+      { selection: { kind: "node", id: nodeId } },
+    );
+  }
+
+  function handleNodePointerDown(node, event) {
+    setSelection({ kind: "node", id: node.id });
+
+    if (node.locked) {
+      return;
+    }
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    setDragState({
+      kind: "node",
+      id: node.id,
+      offsetX: (event.clientX - rect.left) / zoom,
+      offsetY: (event.clientY - rect.top) / zoom,
+    });
   }
 
   function undoProject() {
@@ -890,6 +1129,18 @@ function App() {
 
       const metaKey = event.metaKey || event.ctrlKey;
 
+      if (metaKey && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        saveProjectFile();
+        return;
+      }
+
+      if (metaKey && event.key.toLowerCase() === "o") {
+        event.preventDefault();
+        requestProjectOpen();
+        return;
+      }
+
       if (metaKey && event.key.toLowerCase() === "z" && event.shiftKey) {
         event.preventDefault();
         redoProject();
@@ -910,6 +1161,12 @@ function App() {
 
       if (metaKey && event.key.toLowerCase() === "d" && selectedNode) {
         event.preventDefault();
+
+        if (selectedNode.locked) {
+          setNotice("Unlock this layer before duplicating it");
+          return;
+        }
+
         duplicateSelection();
         return;
       }
@@ -920,6 +1177,12 @@ function App() {
 
       if (event.key === "Backspace" || event.key === "Delete") {
         event.preventDefault();
+
+        if (selection.kind === "node" && selectedNode?.locked) {
+          setNotice("Unlock this layer before deleting it");
+          return;
+        }
+
         applyProjectChange(
           (current) =>
             selection.kind === "node"
@@ -938,6 +1201,12 @@ function App() {
 
       if (selectedNode && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
         event.preventDefault();
+
+        if (selectedNode.locked) {
+          setNotice("Unlock this layer before moving it");
+          return;
+        }
+
         const step = event.shiftKey ? GRID_SIZE : 8;
         const deltaX = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
         const deltaY = event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
@@ -959,7 +1228,7 @@ function App() {
 
     window.addEventListener("keydown", handleKeydown);
     return () => window.removeEventListener("keydown", handleKeydown);
-  }, [selectedNode, selection, snapToGrid, historyVersion]);
+  }, [project.updatedAt, selectedNode, selection, snapToGrid, historyVersion]);
 
   function addAssetToCanvas(asset) {
     const offset = 120 + project.nodes.length * 18;
@@ -1025,6 +1294,7 @@ function App() {
 
   function applyTemplate(template) {
     startTransition(() => {
+      stageRecoveryDraft(`Loaded template ${template.name}`);
       applyProjectChange(normalizeTemplate(template), {
         selection: null,
         notice: `Loaded ${template.name}`,
@@ -1044,6 +1314,7 @@ function App() {
     draftedProject.brief = brief || template.summary;
 
     startTransition(() => {
+      stageRecoveryDraft("Created a quick draft from the brief");
       applyProjectChange(draftedProject, {
         selection: null,
         notice: "Drafted a layout from your brief",
@@ -1055,6 +1326,7 @@ function App() {
     const draftedProject = createPlanProject(plan);
 
     startTransition(() => {
+      stageRecoveryDraft("Applied an AI figure draft");
       applyProjectChange(draftedProject, {
         selection: null,
         notice: "Applied AI figure plan",
@@ -1141,6 +1413,11 @@ function App() {
       return;
     }
 
+    if (selectedNode.locked) {
+      setNotice("Unlock this layer before editing it");
+      return;
+    }
+
     applyProjectChange((current) => ({
       ...current,
       nodes: current.nodes.map((node) =>
@@ -1167,11 +1444,18 @@ function App() {
       return;
     }
 
+    if (selectedNode.locked) {
+      setNotice("Unlock this layer before duplicating it");
+      return;
+    }
+
     const duplicate = {
       ...selectedNode,
       id: createId("node"),
       x: selectedNode.x + 32,
       y: selectedNode.y + 32,
+      locked: false,
+      hidden: false,
     };
 
     applyProjectChange(
@@ -1185,6 +1469,11 @@ function App() {
 
   function bringForward() {
     if (!selectedNode) {
+      return;
+    }
+
+    if (selectedNode.locked) {
+      setNotice("Unlock this layer before reordering it");
       return;
     }
 
@@ -1207,6 +1496,11 @@ function App() {
 
   function sendBackward() {
     if (!selectedNode) {
+      return;
+    }
+
+    if (selectedNode.locked) {
+      setNotice("Unlock this layer before reordering it");
       return;
     }
 
@@ -1233,8 +1527,9 @@ function App() {
   }
 
   function exportProjectJson() {
-    downloadText("helixcanvas-project.json", JSON.stringify(project, null, 2), "application/json");
-    setNotice("Exported project JSON");
+    const projectDocument = createProjectDocument(project);
+    downloadText(projectFileLabel, JSON.stringify(projectDocument, null, 2), "application/json");
+    setNotice("Downloaded project file");
   }
 
   async function copyCitationBundle() {
@@ -1255,14 +1550,13 @@ function App() {
   }
 
   function resetProject() {
-    applyProjectChange(createStarterProject(), {
-      selection: null,
+    projectFileHandleRef.current = null;
+    replaceProjectWorkspace(createStarterProject(), {
       notice: "Reset to starter project",
+      stageReason: "Reset the current workspace",
     });
-    setBrief("");
-    setAiPlan(null);
-    setAiCritique(null);
-    setAiSuggestions([]);
+    setProjectFileName("");
+    setSavedProjectUpdatedAt(null);
   }
 
   function importFromUrl() {
@@ -1359,11 +1653,14 @@ function App() {
           <h1>HelixCanvas</h1>
         </div>
         <div className="topbar__actions">
+          <button type="button" className="ghost-button" onClick={requestProjectOpen}>
+            Open project
+          </button>
+          <button type="button" className="secondary-button" onClick={() => saveProjectFile()}>
+            Save project
+          </button>
           <button type="button" className="ghost-button" onClick={copyCitationBundle}>
             Copy attributions
-          </button>
-          <button type="button" className="secondary-button" onClick={exportProjectJson}>
-            Export JSON
           </button>
           <button type="button" className="primary-button" onClick={exportProjectSvg}>
             Export SVG
@@ -1406,6 +1703,68 @@ function App() {
 
       <section className="workspace">
         <aside className="workspace__sidebar">
+          <div className="panel">
+            <div className="panel__head">
+              <h3>Local project</h3>
+              <span>{hasUnsavedChanges ? "Unsaved edits" : "Saved locally"}</span>
+            </div>
+            <p className="helper-copy">
+              <strong>{project.name}</strong>
+              <br />
+              {projectFileLabel}
+            </p>
+            <div className="library-summary">
+              <span>{hasUnsavedChanges ? "Unsaved changes" : "Save state clean"}</span>
+              <span>{savedProjectUpdatedAt ? "Manual save tracked" : "Not saved yet"}</span>
+            </div>
+            <div className="stack-row">
+              <button type="button" className="secondary-button" onClick={() => saveProjectFile()}>
+                Save
+              </button>
+              <button type="button" className="ghost-button" onClick={() => saveProjectFile({ saveAs: true })}>
+                Save as
+              </button>
+              <button type="button" className="ghost-button" onClick={requestProjectOpen}>
+                Open
+              </button>
+              <button type="button" className="ghost-button" onClick={exportProjectJson}>
+                Download copy
+              </button>
+            </div>
+            {recoveryDraft?.project ? (
+              <div className="project-recovery-card">
+                <div>
+                  <strong>Recovery draft available</strong>
+                  <p>
+                    {recoveryDraft.reason}
+                    {recoveryDraft.capturedAt
+                      ? ` · ${new Date(recoveryDraft.capturedAt).toLocaleString()}`
+                      : ""}
+                  </p>
+                </div>
+                <div className="stack-row">
+                  <button type="button" className="secondary-button" onClick={restoreRecoveryDraft}>
+                    Restore draft
+                  </button>
+                  <button type="button" className="ghost-button" onClick={clearRecoveryDraft}>
+                    Clear
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="helper-copy">
+                Resetting the workspace or opening another file keeps the previous draft here so you can recover it.
+              </p>
+            )}
+            <input
+              ref={projectImportInputRef}
+              type="file"
+              accept=".json,.helixcanvas.json,application/json"
+              hidden
+              onChange={importProjectFromFile}
+            />
+          </div>
+
           <div className="panel">
             <div className="panel__head">
               <h3>AI copilot</h3>
@@ -1805,12 +2164,18 @@ function App() {
                 {project.nodes.map((node) => {
                   const isSelected = selection?.kind === "node" && selection.id === node.id;
 
+                  if (node.hidden) {
+                    return null;
+                  }
+
                   if (node.type === "asset") {
                     return (
                       <button
                         key={node.id}
                         type="button"
-                        className={`node node--asset ${isSelected ? "is-selected" : ""}`}
+                        className={`node node--asset ${isSelected ? "is-selected" : ""} ${
+                          node.locked ? "is-locked" : ""
+                        }`}
                         style={{
                           left: node.x,
                           top: node.y,
@@ -1819,16 +2184,7 @@ function App() {
                           opacity: node.opacity,
                           transform: `rotate(${node.rotation}deg)`,
                         }}
-                        onPointerDown={(event) => {
-                          const rect = event.currentTarget.getBoundingClientRect();
-                          setSelection({ kind: "node", id: node.id });
-                          setDragState({
-                            kind: "node",
-                            id: node.id,
-                            offsetX: (event.clientX - rect.left) / zoom,
-                            offsetY: (event.clientY - rect.top) / zoom,
-                          });
-                        }}
+                        onPointerDown={(event) => handleNodePointerDown(node, event)}
                       >
                         <img src={node.assetUrl} alt={node.title} draggable="false" />
                       </button>
@@ -1840,7 +2196,9 @@ function App() {
                       <button
                         key={node.id}
                         type="button"
-                        className={`node node--text ${isSelected ? "is-selected" : ""}`}
+                        className={`node node--text ${isSelected ? "is-selected" : ""} ${
+                          node.locked ? "is-locked" : ""
+                        }`}
                         style={{
                           left: node.x,
                           top: node.y - node.fontSize,
@@ -1851,16 +2209,7 @@ function App() {
                           fontSize: node.fontSize,
                           fontWeight: node.fontWeight,
                         }}
-                        onPointerDown={(event) => {
-                          const rect = event.currentTarget.getBoundingClientRect();
-                          setSelection({ kind: "node", id: node.id });
-                          setDragState({
-                            kind: "node",
-                            id: node.id,
-                            offsetX: (event.clientX - rect.left) / zoom,
-                            offsetY: (event.clientY - rect.top) / zoom,
-                          });
-                        }}
+                        onPointerDown={(event) => handleNodePointerDown(node, event)}
                       >
                         {node.text}
                       </button>
@@ -1871,7 +2220,9 @@ function App() {
                     <button
                       key={node.id}
                       type="button"
-                      className={`node node--shape ${isSelected ? "is-selected" : ""}`}
+                      className={`node node--shape ${isSelected ? "is-selected" : ""} ${
+                        node.locked ? "is-locked" : ""
+                      }`}
                       style={{
                         left: node.x,
                         top: node.y,
@@ -1884,16 +2235,7 @@ function App() {
                         color: node.color,
                         borderRadius: node.shape === "circle" ? "999px" : node.shape === "card" ? "24px" : "16px",
                       }}
-                      onPointerDown={(event) => {
-                        const rect = event.currentTarget.getBoundingClientRect();
-                        setSelection({ kind: "node", id: node.id });
-                        setDragState({
-                          kind: "node",
-                          id: node.id,
-                          offsetX: (event.clientX - rect.left) / zoom,
-                          offsetY: (event.clientY - rect.top) / zoom,
-                        });
-                      }}
+                      onPointerDown={(event) => handleNodePointerDown(node, event)}
                     >
                       {node.text}
                     </button>
@@ -1920,174 +2262,205 @@ function App() {
 
             {selectedNode ? (
               <div className="inspector-stack">
-                <label>
-                  Title
-                  <input
-                    className="text-input"
-                    value={selectedNode.title ?? selectedNode.text ?? ""}
-                    onChange={(event) =>
-                      updateSelectedNode(
-                        selectedNode.type === "text"
-                          ? { text: event.target.value }
-                          : { title: event.target.value },
-                      )
-                    }
-                  />
-                </label>
+                <div className="stack-row">
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => toggleNodeHidden(selectedNode.id)}
+                  >
+                    {selectedNode.hidden ? "Show layer" : "Hide layer"}
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => toggleNodeLocked(selectedNode.id)}
+                  >
+                    {selectedNode.locked ? "Unlock layer" : "Lock layer"}
+                  </button>
+                </div>
 
-                {selectedNode.type === "text" ? (
-                  <>
-                    <label>
-                      Font size
-                      <input
-                        type="range"
-                        min="12"
-                        max="56"
-                        value={selectedNode.fontSize}
-                        onChange={(event) =>
-                          updateSelectedNode({ fontSize: Number(event.target.value) })
-                        }
-                      />
-                    </label>
-                    <label>
-                      Color
-                      <input
-                        className="color-input"
-                        type="color"
-                        value={selectedNode.color}
-                        onChange={(event) => updateSelectedNode({ color: event.target.value })}
-                      />
-                    </label>
-                  </>
+                {selectedNode.hidden ? (
+                  <p className="helper-copy">
+                    This layer is hidden on the canvas and excluded from figure export until you show it again.
+                  </p>
                 ) : null}
 
-                {selectedNode.type === "shape" ? (
-                  <>
+                {selectedNode.locked ? (
+                  <p className="helper-copy">
+                    This layer is locked. Unlock it to edit, move, duplicate, or delete it.
+                  </p>
+                ) : null}
+
+                <fieldset className="inspector-fieldset" disabled={selectedNode.locked}>
+                  <label>
+                    Title
+                    <input
+                      className="text-input"
+                      value={selectedNode.title ?? selectedNode.text ?? ""}
+                      onChange={(event) =>
+                        updateSelectedNode(
+                          selectedNode.type === "text"
+                            ? { text: event.target.value }
+                            : { title: event.target.value },
+                        )
+                      }
+                    />
+                  </label>
+
+                  {selectedNode.type === "text" ? (
+                    <>
+                      <label>
+                        Font size
+                        <input
+                          type="range"
+                          min="12"
+                          max="56"
+                          value={selectedNode.fontSize}
+                          onChange={(event) =>
+                            updateSelectedNode({ fontSize: Number(event.target.value) })
+                          }
+                        />
+                      </label>
+                      <label>
+                        Color
+                        <input
+                          className="color-input"
+                          type="color"
+                          value={selectedNode.color}
+                          onChange={(event) => updateSelectedNode({ color: event.target.value })}
+                        />
+                      </label>
+                    </>
+                  ) : null}
+
+                  {selectedNode.type === "shape" ? (
+                    <>
+                      <label>
+                        Label
+                        <input
+                          className="text-input"
+                          value={selectedNode.text}
+                          onChange={(event) => updateSelectedNode({ text: event.target.value })}
+                        />
+                      </label>
+                      <label>
+                        Fill
+                        <input
+                          className="color-input"
+                          type="color"
+                          value={selectedNode.fill}
+                          onChange={(event) => updateSelectedNode({ fill: event.target.value })}
+                        />
+                      </label>
+                      <label>
+                        Stroke
+                        <input
+                          className="color-input"
+                          type="color"
+                          value={selectedNode.stroke}
+                          onChange={(event) => updateSelectedNode({ stroke: event.target.value })}
+                        />
+                      </label>
+                    </>
+                  ) : null}
+
+                  {selectedNode.type === "asset" ? (
+                    <div className="source-box">
+                      <strong>{selectedNode.sourceLabel}</strong>
+                      <span>{selectedNode.licenseLabel}</span>
+                      {selectedNode.sourcePage ? (
+                        <button
+                          type="button"
+                          className="ghost-button"
+                          onClick={() => openExternalLink(selectedNode.sourcePage)}
+                        >
+                          Open source page
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  <div className="inspector-grid">
                     <label>
-                      Label
+                      X
                       <input
                         className="text-input"
-                        value={selectedNode.text}
-                        onChange={(event) => updateSelectedNode({ text: event.target.value })}
+                        type="number"
+                        value={Math.round(selectedNode.x)}
+                        onChange={(event) => updateSelectedNode({ x: Number(event.target.value) })}
                       />
                     </label>
                     <label>
-                      Fill
+                      Y
                       <input
-                        className="color-input"
-                        type="color"
-                        value={selectedNode.fill}
-                        onChange={(event) => updateSelectedNode({ fill: event.target.value })}
+                        className="text-input"
+                        type="number"
+                        value={Math.round(selectedNode.y)}
+                        onChange={(event) => updateSelectedNode({ y: Number(event.target.value) })}
                       />
                     </label>
-                    <label>
-                      Stroke
-                      <input
-                        className="color-input"
-                        type="color"
-                        value={selectedNode.stroke}
-                        onChange={(event) => updateSelectedNode({ stroke: event.target.value })}
-                      />
-                    </label>
-                  </>
-                ) : null}
-
-                {selectedNode.type === "asset" ? (
-                  <div className="source-box">
-                    <strong>{selectedNode.sourceLabel}</strong>
-                    <span>{selectedNode.licenseLabel}</span>
-                    {selectedNode.sourcePage ? (
-                      <button
-                        type="button"
-                        className="ghost-button"
-                        onClick={() => openExternalLink(selectedNode.sourcePage)}
-                      >
-                        Open source page
-                      </button>
+                    {"w" in selectedNode ? (
+                      <label>
+                        Width
+                        <input
+                          className="text-input"
+                          type="number"
+                          value={Math.round(selectedNode.w)}
+                          onChange={(event) => updateSelectedNode({ w: Number(event.target.value) })}
+                        />
+                      </label>
+                    ) : null}
+                    {"h" in selectedNode ? (
+                      <label>
+                        Height
+                        <input
+                          className="text-input"
+                          type="number"
+                          value={Math.round(selectedNode.h)}
+                          onChange={(event) => updateSelectedNode({ h: Number(event.target.value) })}
+                        />
+                      </label>
                     ) : null}
                   </div>
-                ) : null}
 
-                <div className="inspector-grid">
                   <label>
-                    X
+                    Rotation
                     <input
-                      className="text-input"
-                      type="number"
-                      value={Math.round(selectedNode.x)}
-                      onChange={(event) => updateSelectedNode({ x: Number(event.target.value) })}
+                      type="range"
+                      min="-25"
+                      max="25"
+                      step="1"
+                      value={selectedNode.rotation}
+                      onChange={(event) =>
+                        updateSelectedNode({ rotation: Number(event.target.value) })
+                      }
                     />
                   </label>
+
                   <label>
-                    Y
+                    Opacity
                     <input
-                      className="text-input"
-                      type="number"
-                      value={Math.round(selectedNode.y)}
-                      onChange={(event) => updateSelectedNode({ y: Number(event.target.value) })}
+                      type="range"
+                      min="0.2"
+                      max="1"
+                      step="0.05"
+                      value={selectedNode.opacity}
+                      onChange={(event) => updateSelectedNode({ opacity: Number(event.target.value) })}
                     />
                   </label>
-                  {"w" in selectedNode ? (
-                    <label>
-                      Width
-                      <input
-                        className="text-input"
-                        type="number"
-                        value={Math.round(selectedNode.w)}
-                        onChange={(event) => updateSelectedNode({ w: Number(event.target.value) })}
-                      />
-                    </label>
-                  ) : null}
-                  {"h" in selectedNode ? (
-                    <label>
-                      Height
-                      <input
-                        className="text-input"
-                        type="number"
-                        value={Math.round(selectedNode.h)}
-                        onChange={(event) => updateSelectedNode({ h: Number(event.target.value) })}
-                      />
-                    </label>
-                  ) : null}
-                </div>
 
-                <label>
-                  Rotation
-                  <input
-                    type="range"
-                    min="-25"
-                    max="25"
-                    step="1"
-                    value={selectedNode.rotation}
-                    onChange={(event) =>
-                      updateSelectedNode({ rotation: Number(event.target.value) })
-                    }
-                  />
-                </label>
-
-                <label>
-                  Opacity
-                  <input
-                    type="range"
-                    min="0.2"
-                    max="1"
-                    step="0.05"
-                    value={selectedNode.opacity}
-                    onChange={(event) => updateSelectedNode({ opacity: Number(event.target.value) })}
-                  />
-                </label>
-
-                <div className="stack-row">
-                  <button type="button" className="secondary-button" onClick={duplicateSelection}>
-                    Duplicate
-                  </button>
-                  <button type="button" className="ghost-button" onClick={bringForward}>
-                    Bring forward
-                  </button>
-                  <button type="button" className="ghost-button" onClick={sendBackward}>
-                    Send back
-                  </button>
-                </div>
+                  <div className="stack-row">
+                    <button type="button" className="secondary-button" onClick={duplicateSelection}>
+                      Duplicate
+                    </button>
+                    <button type="button" className="ghost-button" onClick={bringForward}>
+                      Bring forward
+                    </button>
+                    <button type="button" className="ghost-button" onClick={sendBackward}>
+                      Send back
+                    </button>
+                  </div>
+                </fieldset>
               </div>
             ) : null}
 
@@ -2196,20 +2569,44 @@ function App() {
             </div>
             <div className="layer-list">
               {project.nodes.map((node, index) => (
-                <button
+                <div
                   key={node.id}
-                  type="button"
                   className={`layer-item ${
                     selection?.kind === "node" && selection.id === node.id ? "is-active" : ""
                   }`}
-                  onClick={() => setSelection({ kind: "node", id: node.id })}
                 >
-                  <span>{project.nodes.length - index}</span>
-                  <div>
-                    <strong>{node.title ?? node.text}</strong>
-                    <small>{node.type}</small>
+                  <button
+                    type="button"
+                    className="layer-item__select"
+                    onClick={() => setSelection({ kind: "node", id: node.id })}
+                  >
+                    <span>{project.nodes.length - index}</span>
+                    <div>
+                      <strong>{node.title ?? node.text}</strong>
+                      <small>
+                        {node.type}
+                        {node.hidden ? " · hidden" : ""}
+                        {node.locked ? " · locked" : ""}
+                      </small>
+                    </div>
+                  </button>
+                  <div className="layer-item__actions">
+                    <button
+                      type="button"
+                      className={`layer-icon-button ${node.hidden ? "is-active" : ""}`}
+                      onClick={() => toggleNodeHidden(node.id)}
+                    >
+                      {node.hidden ? "Show" : "Hide"}
+                    </button>
+                    <button
+                      type="button"
+                      className={`layer-icon-button ${node.locked ? "is-active" : ""}`}
+                      onClick={() => toggleNodeLocked(node.id)}
+                    >
+                      {node.locked ? "Unlock" : "Lock"}
+                    </button>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           </div>

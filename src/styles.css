@@ -382,6 +382,19 @@ button:disabled {
   color: var(--muted);
 }
 
+.project-recovery-card {
+  margin-top: 14px;
+  border: 1px solid rgba(17, 33, 46, 0.08);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.76);
+  padding: 12px;
+}
+
+.project-recovery-card p {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+
 .asset-card,
 .kit-card,
 .policy-card,
@@ -635,6 +648,15 @@ button:disabled {
   outline-offset: 6px;
 }
 
+.node.is-locked {
+  cursor: not-allowed;
+  filter: saturate(0.92);
+}
+
+.node.is-locked:active {
+  cursor: not-allowed;
+}
+
 .node--asset img {
   width: 100%;
   height: 100%;
@@ -661,6 +683,20 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.inspector-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.inspector-fieldset:disabled {
+  opacity: 0.68;
 }
 
 .inspector-grid,
@@ -691,10 +727,20 @@ button:disabled {
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.76);
   padding: 12px;
+}
+
+.layer-item__select {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+  padding: 0;
   text-align: left;
 }
 
-.layer-item span {
+.layer-item__select span {
   width: 28px;
   height: 28px;
   display: grid;
@@ -703,6 +749,25 @@ button:disabled {
   background: rgba(15, 118, 110, 0.1);
   color: var(--accent);
   font-weight: 700;
+}
+
+.layer-item__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.layer-icon-button {
+  border: 1px solid rgba(17, 33, 46, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--muted);
+  padding: 8px 10px;
+}
+
+.layer-icon-button.is-active {
+  background: rgba(15, 118, 110, 0.12);
+  color: var(--accent);
+  border-color: rgba(15, 118, 110, 0.22);
 }
 
 .policy-card ul {

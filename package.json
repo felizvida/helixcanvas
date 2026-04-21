@@ -2,8 +2,10 @@
   "name": "helixcanvas",
   "version": "0.1.0",
   "private": true,
-  "description": "An AI-assisted biomedical illustration studio that unifies Bioicons, Servier Medical Art, and user-owned figure imports in a publication-focused editor.",
+  "description": "An open-source, local-first biomedical illustration studio that unifies Bioicons, Servier Medical Art, and user-owned figure imports in a publication-focused editor.",
   "keywords": [
+    "open-source",
+    "local-first",
     "biomedical",
     "scientific-illustration",
     "bioicons",

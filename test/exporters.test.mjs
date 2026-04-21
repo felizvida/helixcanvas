@@ -9,6 +9,7 @@ test("collectProjectCitations deduplicates repeated citations", () => {
       { citation: "Bioicons: Cell" },
       { citation: "Servier: Neuron" },
       { citation: "Bioicons: Cell" },
+      { citation: "Hidden: Ignore", hidden: true },
     ],
   });
 
@@ -58,6 +59,13 @@ test("projectToSvg renders escaped text, connectors, and assets", () => {
         fill: "#eef4dc",
         stroke: "#88a166",
       },
+      {
+        type: "text",
+        x: 80,
+        y: 260,
+        text: "Hidden note",
+        hidden: true,
+      },
     ],
   });
 
@@ -65,4 +73,5 @@ test("projectToSvg renders escaped text, connectors, and assets", () => {
   assert.match(svg, /Panel &lt;A&gt;/);
   assert.match(svg, /<image[^>]+https:\/\/example.com\/cell\.svg/);
   assert.match(svg, /marker-end="url\(#arrowhead\)"/);
+  assert.doesNotMatch(svg, /Hidden note/);
 });

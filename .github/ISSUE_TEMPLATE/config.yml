@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: HelixCanvas roadmap
+    url: https://github.com/felizvida/helixcanvas/blob/main/docs/OSS_ROADMAP.md
+    about: Check the open-source roadmap before proposing large changes.
+  - name: Product overview
+    url: https://github.com/felizvida/helixcanvas/blob/main/docs/PRODUCT_OVERVIEW.md
+    about: Read the product and architecture context for the project.
