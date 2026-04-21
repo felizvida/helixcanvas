@@ -25,10 +25,11 @@
     "dev": "concurrently \"npm:api:dev\" \"vite\"",
     "api:dev": "node server/index.mjs",
     "start": "node server/index.mjs",
+    "test": "node --test",
     "build": "vite build",
     "preview": "vite preview",
     "build:library": "node scripts/generate-bioicons-index.mjs",
-    "check": "vite build"
+    "check": "npm run test && npm run build"
   },
   "dependencies": {
     "concurrently": "^9.2.1",

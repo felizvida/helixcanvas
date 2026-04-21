@@ -258,6 +258,12 @@ textarea {
   border: 1px solid rgba(17, 33, 46, 0.08);
 }
 
+.ghost-button.is-toggled {
+  background: rgba(15, 118, 110, 0.14);
+  color: var(--accent);
+  border-color: rgba(15, 118, 110, 0.24);
+}
+
 .primary-button:hover,
 .secondary-button:hover,
 .ghost-button:hover,
@@ -303,6 +309,77 @@ button:disabled {
   max-height: 540px;
   overflow: auto;
   padding-right: 6px;
+}
+
+.library-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.library-summary span,
+.toolbar-hints span,
+.asset-shelf__head span {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(17, 33, 46, 0.08);
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.asset-shelf + .asset-shelf {
+  margin-top: 12px;
+}
+
+.asset-shelf__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.asset-shelf__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.asset-shelf__item {
+  border: 1px solid rgba(17, 33, 46, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.76);
+  padding: 10px;
+  text-align: left;
+}
+
+.asset-shelf__item img {
+  width: 100%;
+  aspect-ratio: 1.35;
+  object-fit: contain;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.14), transparent 30%),
+    rgba(247, 244, 238, 0.9);
+}
+
+.asset-shelf__item span,
+.asset-shelf__item small {
+  display: block;
+}
+
+.asset-shelf__item span {
+  margin-top: 8px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.asset-shelf__item small {
+  margin-top: 4px;
+  color: var(--muted);
 }
 
 .asset-card,
@@ -500,6 +577,13 @@ button:disabled {
 
 .zoom-control input {
   flex: 1;
+}
+
+.toolbar-hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
 .canvas-frame {

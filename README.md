@@ -40,7 +40,8 @@ HelixCanvas is designed to bridge that gap. It treats **library provenance, lice
 - Unified in-app library for Bioicons assets with preserved licensing metadata
 - Servier-authored vector subset surfaced through Bioicons
 - Official Servier Medical Art raster examples and PPTX kit links
-- Drag-and-drop canvas with text, shapes, connectors, layers, resizing, and export
+- Drag-and-drop canvas with undo/redo, keyboard nudging, snap-to-grid, layering, resizing, and export
+- Asset curation features including saved assets, recent assets, and relevance-aware library sorting
 - FigureLabs handled as **import-only**, avoiding redistribution of unclear third-party gallery assets
 - AI drafting from a research brief into a structured figure plan
 - AI critique for hierarchy, narrative flow, provenance risk, and caption quality
@@ -109,6 +110,17 @@ npm run dev
 npm run build
 npm start
 ```
+
+## Quality Checks
+
+Run the local verification suite with:
+
+```bash
+npm test
+npm run build
+```
+
+GitHub Actions now runs the same checks on pushes to `main` and on pull requests through [.github/workflows/ci.yml](/Users/liux17/codex/figurender/.github/workflows/ci.yml).
 
 ## Project Structure
 

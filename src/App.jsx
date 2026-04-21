@@ -2,11 +2,26 @@ import { startTransition, useDeferredValue, useEffect, useRef, useState } from "
 import { SERVIER_KITS, SERVIER_ORIGINALS, SOURCE_POLICIES } from "./data/servier.js";
 import { TEMPLATES } from "./data/templates.js";
 import { fetchAiHealth, requestFigureCritique, requestFigurePlan } from "./lib/ai.js";
+import {
+  buildAiSuggestions,
+  isDuplicateImportedAsset,
+  pushRecentAsset,
+  sortLibraryAssets,
+  toggleFavoriteAssetId,
+} from "./lib/assets.js";
 import { collectProjectCitations, downloadText, projectToSvg } from "./lib/exporters.js";
+import {
+  createHistoryState,
+  pushHistoryState,
+  redoHistoryState,
+  undoHistoryState,
+} from "./lib/history.js";
 
 const STORAGE_KEYS = {
   project: "helixcanvas-project-v1",
   importedAssets: "helixcanvas-imported-assets-v1",
+  favoriteAssets: "helixcanvas-favorite-assets-v1",
+  recentAssets: "helixcanvas-recent-assets-v1",
 };
 
 const SOURCE_FILTERS = [
@@ -17,11 +32,20 @@ const SOURCE_FILTERS = [
   { id: "figurelabs-import", label: "FigureLabs imports" },
 ];
 
+const SORT_OPTIONS = [
+  { id: "relevance", label: "Relevance" },
+  { id: "favorites", label: "Saved first" },
+  { id: "recent", label: "Recent first" },
+  { id: "alphabetical", label: "A-Z" },
+];
+
 const BOARD_PRESETS = {
   width: 1400,
   height: 900,
   background: "#f7f2ea",
 };
+
+const GRID_SIZE = 32;
 
 const HERO_KPIS = [
   { label: "Open assets", value: "2.8K+" },
@@ -138,6 +162,7 @@ function makeAssetNode(asset, position = { x: 160, y: 180 }) {
 
   return {
     id: createId("node"),
+    assetId: asset.id,
     type: "asset",
     title: asset.title,
     assetUrl: asset.assetUrl,
@@ -192,6 +217,23 @@ function makeTextNode(position) {
 
 function findNode(project, id) {
   return project.nodes.find((node) => node.id === id) ?? null;
+}
+
+function snapValue(value, enabled) {
+  return enabled ? Math.round(value / GRID_SIZE) * GRID_SIZE : value;
+}
+
+function isTypingTarget(target) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return (
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.tagName === "SELECT" ||
+    target.isContentEditable
+  );
 }
 
 function openExternalLink(href) {
@@ -379,67 +421,15 @@ function createPlanProject(plan) {
   };
 }
 
-function getAssetMatchScore(asset, suggestion) {
-  const terms = suggestion.query
-    .toLowerCase()
-    .split(/[^a-z0-9]+/i)
-    .filter(Boolean);
-  const haystack = [
-    asset.title,
-    asset.searchText,
-    asset.categoryLabel,
-    asset.sourceLabel,
-    asset.originLabel,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  let score = 0;
-
-  if (asset.sourceBucket === suggestion.preferredSourceBucket) {
-    score += 6;
-  }
-
-  if (haystack.includes(suggestion.query.toLowerCase())) {
-    score += 8;
-  }
-
-  for (const term of terms) {
-    if (asset.title?.toLowerCase().includes(term)) {
-      score += 5;
-    }
-    if (asset.searchText?.includes(term)) {
-      score += 4;
-    }
-    if (asset.categoryLabel?.toLowerCase().includes(term)) {
-      score += 2;
-    }
-  }
-
-  return score;
-}
-
-function buildAiSuggestions(suggestions, library) {
-  return suggestions.map((suggestion) => {
-    const matches = [...library]
-      .map((asset) => ({
-        asset,
-        score: getAssetMatchScore(asset, suggestion),
-      }))
-      .filter((item) => item.score > 0)
-      .sort((left, right) => right.score - left.score)
-      .slice(0, 4)
-      .map((item) => item.asset);
-
-    return {
-      ...suggestion,
-      matches,
-    };
-  });
-}
-
-function AssetCard({ asset, onAdd, active, onSelectSource }) {
+function AssetCard({
+  asset,
+  onAdd,
+  active,
+  onSelectSource,
+  onToggleFavorite,
+  favorite,
+  used,
+}) {
   return (
     <article className={`asset-card ${active ? "is-active" : ""}`}>
       <div className="asset-card__preview">
@@ -460,11 +450,15 @@ function AssetCard({ asset, onAdd, active, onSelectSource }) {
         <div className="asset-card__meta">
           <span>{asset.licenseLabel}</span>
           {asset.originLabel ? <span>{asset.originLabel}</span> : null}
+          {used ? <span>On canvas</span> : null}
         </div>
       </div>
       <div className="asset-card__actions">
         <button className="secondary-button" type="button" onClick={() => onAdd(asset)}>
           Add
+        </button>
+        <button className="ghost-button" type="button" onClick={() => onToggleFavorite(asset.id)}>
+          {favorite ? "Unsave" : "Save"}
         </button>
         {asset.sourcePage ? (
           <button
@@ -494,6 +488,35 @@ function KitCard({ kit }) {
         </button>
       </div>
     </article>
+  );
+}
+
+function AssetShelf({ title, assets, onAdd }) {
+  if (!assets.length) {
+    return null;
+  }
+
+  return (
+    <div className="asset-shelf">
+      <div className="asset-shelf__head">
+        <strong>{title}</strong>
+        <span>{assets.length}</span>
+      </div>
+      <div className="asset-shelf__grid">
+        {assets.map((asset) => (
+          <button
+            key={asset.id}
+            type="button"
+            className="asset-shelf__item"
+            onClick={() => onAdd(asset)}
+          >
+            <img src={asset.previewUrl ?? asset.assetUrl} alt={asset.title} />
+            <span>{asset.title}</span>
+            <small>{asset.sourceLabel}</small>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -534,11 +557,20 @@ function App() {
   const [libraryQuery, setLibraryQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [sortMode, setSortMode] = useState("relevance");
   const [brief, setBrief] = useState("");
   const [importUrl, setImportUrl] = useState("");
   const [notice, setNotice] = useState("");
   const [zoom, setZoom] = useState(0.78);
+  const [snapToGrid, setSnapToGrid] = useState(true);
   const [dragState, setDragState] = useState(null);
+  const [favoriteAssetIds, setFavoriteAssetIds] = useState(() =>
+    typeof window === "undefined" ? [] : parseStoredJson(STORAGE_KEYS.favoriteAssets, []),
+  );
+  const [recentAssetIds, setRecentAssetIds] = useState(() =>
+    typeof window === "undefined" ? [] : parseStoredJson(STORAGE_KEYS.recentAssets, []),
+  );
+  const [historyVersion, setHistoryVersion] = useState(0);
   const [aiStatus, setAiStatus] = useState({
     checking: true,
     configured: false,
@@ -554,6 +586,8 @@ function App() {
   });
 
   const boardRef = useRef(null);
+  const historyRef = useRef(createHistoryState());
+  const dragHistoryCapturedRef = useRef(false);
   const deferredQuery = useDeferredValue(libraryQuery.trim().toLowerCase());
 
   useEffect(() => {
@@ -600,6 +634,14 @@ function App() {
   }, [importedAssets]);
 
   useEffect(() => {
+    window.localStorage.setItem(STORAGE_KEYS.favoriteAssets, JSON.stringify(favoriteAssetIds));
+  }, [favoriteAssetIds]);
+
+  useEffect(() => {
+    window.localStorage.setItem(STORAGE_KEYS.recentAssets, JSON.stringify(recentAssetIds));
+  }, [recentAssetIds]);
+
+  useEffect(() => {
     if (!notice) {
       return undefined;
     }
@@ -636,41 +678,84 @@ function App() {
       const y = (event.clientY - rect.top) / zoom;
 
       if (dragState.kind === "node") {
-        setProject((current) => ({
-          ...current,
-          nodes: current.nodes.map((node) =>
-            node.id === dragState.id
-              ? {
-                  ...node,
-                  x: Math.max(0, x - dragState.offsetX),
-                  y: Math.max(0, y - dragState.offsetY),
-                }
-              : node,
-          ),
-          updatedAt: new Date().toISOString(),
-        }));
+        setProject((current) => {
+          const node = current.nodes.find((item) => item.id === dragState.id);
+
+          if (!node) {
+            return current;
+          }
+
+          const nextX = Math.max(0, snapValue(x - dragState.offsetX, snapToGrid));
+          const nextY = Math.max(0, snapValue(y - dragState.offsetY, snapToGrid));
+
+          if (nextX === node.x && nextY === node.y) {
+            return current;
+          }
+
+          if (!dragHistoryCapturedRef.current) {
+            historyRef.current = pushHistoryState(historyRef.current, current);
+            dragHistoryCapturedRef.current = true;
+            setHistoryVersion((value) => value + 1);
+          }
+
+          return {
+            ...current,
+            nodes: current.nodes.map((item) =>
+              item.id === dragState.id
+                ? {
+                    ...item,
+                    x: nextX,
+                    y: nextY,
+                  }
+                : item,
+            ),
+            updatedAt: new Date().toISOString(),
+          };
+        });
       }
 
       if (dragState.kind === "connector") {
-        setProject((current) => ({
-          ...current,
-          connectors: current.connectors.map((connector) =>
-            connector.id === dragState.id
-              ? {
-                  ...connector,
-                  [dragState.handle]: {
-                    x,
-                    y,
-                  },
-                }
-              : connector,
-          ),
-          updatedAt: new Date().toISOString(),
-        }));
+        setProject((current) => {
+          const connector = current.connectors.find((item) => item.id === dragState.id);
+
+          if (!connector) {
+            return current;
+          }
+
+          const nextHandle = {
+            x: snapValue(x, snapToGrid),
+            y: snapValue(y, snapToGrid),
+          };
+          const currentHandle = connector[dragState.handle];
+
+          if (nextHandle.x === currentHandle.x && nextHandle.y === currentHandle.y) {
+            return current;
+          }
+
+          if (!dragHistoryCapturedRef.current) {
+            historyRef.current = pushHistoryState(historyRef.current, current);
+            dragHistoryCapturedRef.current = true;
+            setHistoryVersion((value) => value + 1);
+          }
+
+          return {
+            ...current,
+            connectors: current.connectors.map((item) =>
+              item.id === dragState.id
+                ? {
+                    ...item,
+                    [dragState.handle]: nextHandle,
+                  }
+                : item,
+            ),
+            updatedAt: new Date().toISOString(),
+          };
+        });
       }
     }
 
     function stopDrag() {
+      dragHistoryCapturedRef.current = false;
       setDragState(null);
     }
 
@@ -681,75 +766,213 @@ function App() {
       window.removeEventListener("pointermove", updateDrag);
       window.removeEventListener("pointerup", stopDrag);
     };
-  }, [dragState, zoom]);
-
-  useEffect(() => {
-    function handleKeydown(event) {
-      if (!selection) {
-        return;
-      }
-
-      if (event.key !== "Backspace" && event.key !== "Delete") {
-        return;
-      }
-
-      event.preventDefault();
-
-      setProject((current) => {
-        if (selection.kind === "node") {
-          return {
-            ...current,
-            nodes: current.nodes.filter((node) => node.id !== selection.id),
-            updatedAt: new Date().toISOString(),
-          };
-        }
-
-        return {
-          ...current,
-          connectors: current.connectors.filter((connector) => connector.id !== selection.id),
-          updatedAt: new Date().toISOString(),
-        };
-      });
-      setSelection(null);
-    }
-
-    window.addEventListener("keydown", handleKeydown);
-    return () => window.removeEventListener("keydown", handleKeydown);
-  }, [selection]);
+  }, [dragState, snapToGrid, zoom]);
 
   const unifiedLibrary = [...SERVIER_ORIGINALS, ...importedAssets, ...library];
   const totalCounts = summarizeCounts(unifiedLibrary);
+  const usedAssetIds = [
+    ...new Set(
+      project.nodes
+        .filter((node) => node.type === "asset" && node.assetId)
+        .map((node) => node.assetId),
+    ),
+  ];
   const categories = [
     "all",
     ...[...new Set(unifiedLibrary.map((item) => item.categoryLabel))].sort(),
   ];
-  const filteredLibrary = unifiedLibrary.filter((asset) => {
-    const matchesSource = sourceFilter === "all" || asset.sourceBucket === sourceFilter;
-    const matchesCategory = categoryFilter === "all" || asset.categoryLabel === categoryFilter;
-    const matchesQuery =
-      !deferredQuery ||
-      asset.title.toLowerCase().includes(deferredQuery) ||
-      asset.searchText?.includes(deferredQuery);
+  const filteredLibrary = sortLibraryAssets(
+    unifiedLibrary.filter((asset) => {
+      const matchesSource = sourceFilter === "all" || asset.sourceBucket === sourceFilter;
+      const matchesCategory = categoryFilter === "all" || asset.categoryLabel === categoryFilter;
+      const matchesQuery =
+        !deferredQuery ||
+        asset.title.toLowerCase().includes(deferredQuery) ||
+        asset.searchText?.includes(deferredQuery);
 
-    return matchesSource && matchesCategory && matchesQuery;
-  });
+      return matchesSource && matchesCategory && matchesQuery;
+    }),
+    {
+      sortMode,
+      favoriteAssetIds,
+      recentAssetIds,
+      usedAssetIds,
+    },
+  );
 
   const selectedNode = selection?.kind === "node" ? findNode(project, selection.id) : null;
   const selectedConnector =
     selection?.kind === "connector"
       ? project.connectors.find((connector) => connector.id === selection.id) ?? null
       : null;
+  const canUndo = historyRef.current.past.length > 0;
+  const canRedo = historyRef.current.future.length > 0;
+  const favoriteAssets = favoriteAssetIds
+    .map((id) => unifiedLibrary.find((asset) => asset.id === id))
+    .filter(Boolean)
+    .slice(0, 6);
+  const recentAssets = recentAssetIds
+    .map((id) => unifiedLibrary.find((asset) => asset.id === id))
+    .filter(Boolean)
+    .slice(0, 6);
+
+  function applyProjectChange(updater, options = {}) {
+    const { selection: nextSelection, notice: noticeMessage } = options;
+
+    setProject((current) => {
+      const nextProject = typeof updater === "function" ? updater(current) : updater;
+
+      if (!nextProject || nextProject === current) {
+        return current;
+      }
+
+      historyRef.current = pushHistoryState(historyRef.current, current);
+      setHistoryVersion((value) => value + 1);
+
+      return {
+        ...nextProject,
+        updatedAt: new Date().toISOString(),
+      };
+    });
+
+    if (nextSelection !== undefined) {
+      setSelection(nextSelection);
+    }
+
+    if (noticeMessage) {
+      setNotice(noticeMessage);
+    }
+  }
+
+  function undoProject() {
+    setProject((current) => {
+      const result = undoHistoryState(historyRef.current, current);
+
+      if (!result.changed) {
+        return current;
+      }
+
+      historyRef.current = result.history;
+      setHistoryVersion((value) => value + 1);
+      return result.project;
+    });
+    setSelection(null);
+  }
+
+  function redoProject() {
+    setProject((current) => {
+      const result = redoHistoryState(historyRef.current, current);
+
+      if (!result.changed) {
+        return current;
+      }
+
+      historyRef.current = result.history;
+      setHistoryVersion((value) => value + 1);
+      return result.project;
+    });
+    setSelection(null);
+  }
+
+  function registerAssetUsage(asset) {
+    setRecentAssetIds((current) => pushRecentAsset(current, asset.id));
+  }
+
+  function toggleFavorite(assetId) {
+    setFavoriteAssetIds((current) => toggleFavoriteAssetId(current, assetId));
+  }
+
+  useEffect(() => {
+    function handleKeydown(event) {
+      if (isTypingTarget(event.target)) {
+        return;
+      }
+
+      const metaKey = event.metaKey || event.ctrlKey;
+
+      if (metaKey && event.key.toLowerCase() === "z" && event.shiftKey) {
+        event.preventDefault();
+        redoProject();
+        return;
+      }
+
+      if (metaKey && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        undoProject();
+        return;
+      }
+
+      if (metaKey && event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        redoProject();
+        return;
+      }
+
+      if (metaKey && event.key.toLowerCase() === "d" && selectedNode) {
+        event.preventDefault();
+        duplicateSelection();
+        return;
+      }
+
+      if (!selection) {
+        return;
+      }
+
+      if (event.key === "Backspace" || event.key === "Delete") {
+        event.preventDefault();
+        applyProjectChange(
+          (current) =>
+            selection.kind === "node"
+              ? {
+                  ...current,
+                  nodes: current.nodes.filter((node) => node.id !== selection.id),
+                }
+              : {
+                  ...current,
+                  connectors: current.connectors.filter((connector) => connector.id !== selection.id),
+                },
+          { selection: null },
+        );
+        return;
+      }
+
+      if (selectedNode && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
+        event.preventDefault();
+        const step = event.shiftKey ? GRID_SIZE : 8;
+        const deltaX = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
+        const deltaY = event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
+
+        applyProjectChange((current) => ({
+          ...current,
+          nodes: current.nodes.map((node) =>
+            node.id === selectedNode.id
+              ? {
+                  ...node,
+                  x: Math.max(0, snapValue(node.x + deltaX, snapToGrid && event.shiftKey)),
+                  y: Math.max(0, snapValue(node.y + deltaY, snapToGrid && event.shiftKey)),
+                }
+              : node,
+          ),
+        }));
+      }
+    }
+
+    window.addEventListener("keydown", handleKeydown);
+    return () => window.removeEventListener("keydown", handleKeydown);
+  }, [selectedNode, selection, snapToGrid, historyVersion]);
 
   function addAssetToCanvas(asset) {
     const offset = 120 + project.nodes.length * 18;
     const newNode = makeAssetNode(asset, { x: offset, y: 140 + project.nodes.length * 10 });
 
-    setProject((current) => ({
-      ...current,
-      nodes: [...current.nodes, newNode],
-      updatedAt: new Date().toISOString(),
-    }));
-    setSelection({ kind: "node", id: newNode.id });
+    applyProjectChange(
+      (current) => ({
+        ...current,
+        nodes: [...current.nodes, newNode],
+      }),
+      { selection: { kind: "node", id: newNode.id } },
+    );
+    registerAssetUsage(asset);
   }
 
   function addShape(shape) {
@@ -758,12 +981,13 @@ function App() {
       y: 180 + project.nodes.length * 10,
     });
 
-    setProject((current) => ({
-      ...current,
-      nodes: [...current.nodes, newNode],
-      updatedAt: new Date().toISOString(),
-    }));
-    setSelection({ kind: "node", id: newNode.id });
+    applyProjectChange(
+      (current) => ({
+        ...current,
+        nodes: [...current.nodes, newNode],
+      }),
+      { selection: { kind: "node", id: newNode.id } },
+    );
   }
 
   function addText() {
@@ -772,12 +996,13 @@ function App() {
       y: 120 + project.nodes.length * 12,
     });
 
-    setProject((current) => ({
-      ...current,
-      nodes: [...current.nodes, newNode],
-      updatedAt: new Date().toISOString(),
-    }));
-    setSelection({ kind: "node", id: newNode.id });
+    applyProjectChange(
+      (current) => ({
+        ...current,
+        nodes: [...current.nodes, newNode],
+      }),
+      { selection: { kind: "node", id: newNode.id } },
+    );
   }
 
   function addConnector() {
@@ -789,19 +1014,21 @@ function App() {
       strokeWidth: 4,
     };
 
-    setProject((current) => ({
-      ...current,
-      connectors: [...current.connectors, connector],
-      updatedAt: new Date().toISOString(),
-    }));
-    setSelection({ kind: "connector", id: connector.id });
+    applyProjectChange(
+      (current) => ({
+        ...current,
+        connectors: [...current.connectors, connector],
+      }),
+      { selection: { kind: "connector", id: connector.id } },
+    );
   }
 
   function applyTemplate(template) {
     startTransition(() => {
-      setProject(normalizeTemplate(template));
-      setSelection(null);
-      setNotice(`Loaded ${template.name}`);
+      applyProjectChange(normalizeTemplate(template), {
+        selection: null,
+        notice: `Loaded ${template.name}`,
+      });
     });
   }
 
@@ -817,9 +1044,10 @@ function App() {
     draftedProject.brief = brief || template.summary;
 
     startTransition(() => {
-      setProject(draftedProject);
-      setSelection(null);
-      setNotice("Drafted a layout from your brief");
+      applyProjectChange(draftedProject, {
+        selection: null,
+        notice: "Drafted a layout from your brief",
+      });
     });
   }
 
@@ -827,9 +1055,10 @@ function App() {
     const draftedProject = createPlanProject(plan);
 
     startTransition(() => {
-      setProject(draftedProject);
-      setSelection(null);
-      setNotice("Applied AI figure plan");
+      applyProjectChange(draftedProject, {
+        selection: null,
+        notice: "Applied AI figure plan",
+      });
     });
   }
 
@@ -912,12 +1141,11 @@ function App() {
       return;
     }
 
-    setProject((current) => ({
+    applyProjectChange((current) => ({
       ...current,
       nodes: current.nodes.map((node) =>
         node.id === selectedNode.id ? { ...node, ...patch } : node,
       ),
-      updatedAt: new Date().toISOString(),
     }));
   }
 
@@ -926,12 +1154,11 @@ function App() {
       return;
     }
 
-    setProject((current) => ({
+    applyProjectChange((current) => ({
       ...current,
       connectors: current.connectors.map((connector) =>
         connector.id === selectedConnector.id ? { ...connector, ...patch } : connector,
       ),
-      updatedAt: new Date().toISOString(),
     }));
   }
 
@@ -947,12 +1174,13 @@ function App() {
       y: selectedNode.y + 32,
     };
 
-    setProject((current) => ({
-      ...current,
-      nodes: [...current.nodes, duplicate],
-      updatedAt: new Date().toISOString(),
-    }));
-    setSelection({ kind: "node", id: duplicate.id });
+    applyProjectChange(
+      (current) => ({
+        ...current,
+        nodes: [...current.nodes, duplicate],
+      }),
+      { selection: { kind: "node", id: duplicate.id } },
+    );
   }
 
   function bringForward() {
@@ -960,7 +1188,7 @@ function App() {
       return;
     }
 
-    setProject((current) => {
+    applyProjectChange((current) => {
       const index = current.nodes.findIndex((node) => node.id === selectedNode.id);
 
       if (index < 0 || index === current.nodes.length - 1) {
@@ -973,7 +1201,6 @@ function App() {
       return {
         ...current,
         nodes,
-        updatedAt: new Date().toISOString(),
       };
     });
   }
@@ -983,7 +1210,7 @@ function App() {
       return;
     }
 
-    setProject((current) => {
+    applyProjectChange((current) => {
       const index = current.nodes.findIndex((node) => node.id === selectedNode.id);
 
       if (index <= 0) {
@@ -996,7 +1223,6 @@ function App() {
       return {
         ...current,
         nodes,
-        updatedAt: new Date().toISOString(),
       };
     });
   }
@@ -1029,13 +1255,14 @@ function App() {
   }
 
   function resetProject() {
-    setProject(createStarterProject());
-    setSelection(null);
+    applyProjectChange(createStarterProject(), {
+      selection: null,
+      notice: "Reset to starter project",
+    });
     setBrief("");
     setAiPlan(null);
     setAiCritique(null);
     setAiSuggestions([]);
-    setNotice("Reset to starter project");
   }
 
   function importFromUrl() {
@@ -1062,6 +1289,11 @@ function App() {
       citation:
         "User imported asset. Confirm publication rights and attribution rules before submission.",
     };
+
+    if (isDuplicateImportedAsset(importedAssets, asset)) {
+      setNotice("That import is already in your library");
+      return;
+    }
 
     setImportedAssets((current) => [asset, ...current]);
     setImportUrl("");
@@ -1095,6 +1327,11 @@ function App() {
         citation:
           "User imported asset. Confirm publication rights and attribution rules before submission.",
       };
+
+      if (isDuplicateImportedAsset(importedAssets, asset)) {
+        setNotice(`${file.name} is already in your library`);
+        return;
+      }
 
       setImportedAssets((current) => [asset, ...current]);
       setNotice(`Imported ${file.name}`);
@@ -1322,7 +1559,21 @@ function App() {
                   </option>
                 ))}
               </select>
+              <select value={sortMode} onChange={(event) => setSortMode(event.target.value)}>
+                {SORT_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </div>
+            <div className="library-summary">
+              <span>{favoriteAssetIds.length} saved</span>
+              <span>{recentAssetIds.length} recent</span>
+              <span>{usedAssetIds.length} on canvas</span>
+            </div>
+            <AssetShelf title="Saved assets" assets={favoriteAssets} onAdd={addAssetToCanvas} />
+            <AssetShelf title="Recent assets" assets={recentAssets} onAdd={addAssetToCanvas} />
             <div className="asset-grid">
               {libraryStatus === "loading" ? <p>Indexing Bioicons...</p> : null}
               {libraryStatus === "error" ? (
@@ -1336,8 +1587,11 @@ function App() {
                   key={asset.id}
                   asset={asset}
                   onAdd={addAssetToCanvas}
-                  active={selectedNode?.title === asset.title}
+                  active={selectedNode?.assetId === asset.id}
                   onSelectSource={setSourceFilter}
+                  onToggleFavorite={toggleFavorite}
+                  favorite={favoriteAssetIds.includes(asset.id)}
+                  used={usedAssetIds.includes(asset.id)}
                 />
               ))}
             </div>
@@ -1390,6 +1644,29 @@ function App() {
                 <h3>{project.name}</h3>
               </div>
               <div className="studio-toolbar__actions">
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={undoProject}
+                  disabled={!canUndo}
+                >
+                  Undo
+                </button>
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={redoProject}
+                  disabled={!canRedo}
+                >
+                  Redo
+                </button>
+                <button
+                  type="button"
+                  className={`ghost-button ${snapToGrid ? "is-toggled" : ""}`}
+                  onClick={() => setSnapToGrid((value) => !value)}
+                >
+                  Snap {snapToGrid ? "On" : "Off"}
+                </button>
                 <button type="button" className="ghost-button" onClick={() => addShape("card")}>
                   Add card
                 </button>
@@ -1416,6 +1693,11 @@ function App() {
                   onChange={(event) => setZoom(Number(event.target.value))}
                 />
                 <strong>{Math.round(zoom * 100)}%</strong>
+              </div>
+              <div className="toolbar-hints">
+                <span>Cmd/Ctrl+Z undo</span>
+                <span>Cmd/Ctrl+D duplicate</span>
+                <span>Shift+arrows coarse nudge</span>
               </div>
               <div className="template-row">
                 {TEMPLATES.map((template) => (
