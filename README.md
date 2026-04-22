@@ -12,90 +12,60 @@
   Open libraries, provenance-first imports, optional AI planning, and export-ready composition in one workspace.
 </p>
 
-## What HelixCanvas Is
+<p align="center">
+  <a href="https://github.com/felizvida/helixcanvas/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/felizvida/helixcanvas?display_name=tag" /></a>
+  <a href="https://github.com/felizvida/helixcanvas/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/felizvida/helixcanvas/ci.yml?branch=main&label=ci" /></a>
+  <a href="./LICENSE"><img alt="License" src="https://img.shields.io/github/license/felizvida/helixcanvas" /></a>
+  <img alt="Local-first" src="https://img.shields.io/badge/local--first-yes-0f766e" />
+  <img alt="AI optional" src="https://img.shields.io/badge/AI-optional-ea8060" />
+</p>
 
-HelixCanvas is a local-first biomedical figure tool that combines:
+<p align="center">
+  <img src="./docs/tutorial/egfr-interface.png" alt="HelixCanvas live interface" width="92%" />
+</p>
+
+## HelixCanvas In 30 Seconds
+
+HelixCanvas is a local-first biomedical figure editor built for people who want publication-ready visuals without losing provenance, attribution, or control. It combines:
 
 - a searchable open illustration library based on **Bioicons**
-- curated **Servier Medical Art** assets and kit links
+- curated **Servier Medical Art** assets and official kit links
 - a safe import lane for **user-owned FigureLabs exports**
-- a drag-and-drop editor for research diagrams
+- a serious figure editor with layouts, exports, snapshots, and review notes
 - an **optional** server-side AI copilot for planning and critique
 
-The goal is simple: help researchers move from a rough scientific idea to a clean, publication-ready visual without losing track of source provenance or attribution, and without requiring a paid platform.
+The project is being shaped as a public-good tool rather than a commercial SaaS product. The long-term ambition is closer to an Inkscape-for-biomedical-figures than a locked-down hosted platform.
 
-## Open-Source Direction
+## What Ships Today
 
-HelixCanvas is being shaped as a public-good tool:
+- Source-aware built-in asset packs with pack validation, license strategy, and provenance metadata
+- Bioicons search plus Servier-derived vectors, Servier originals, and safe user-owned imports
+- Real biology example figures and tutorial artifacts for signaling, CRISPR workflow, and retinal degeneration
+- Multi-select, marquee selection, grouping, alignment guides, align/distribute, reorder, lock, and hide controls
+- Panel-layout presets, legend blocks, callout blocks, scale bars, and reusable components
+- Local project open/save, recovery drafts, and named local snapshots
+- Inline pinned review comments that stay in the project but stay out of exports
+- SVG, PNG, PDF, JSON, and citation-bundle export paths
+- Optional AI brief-to-plan drafting and figure critique with the API key kept on the server
 
-- zero-cost by default
-- local-first and useful without AI
-- transparent about sources, licenses, and attribution
-- open to community packs and contributor improvements
-- designed to stay maintainable without a required hosted backend
+## Why It Feels Different
 
-The long-term ambition is closer to an Inkscape-for-biomedical-figures than a commercial SaaS editor.
-
-## Current Capabilities
-
-- Unified in-app library for Bioicons assets with preserved licensing metadata
-- Versioned built-in asset packs with pack-level provenance, license strategy, and validation status
-- Servier-authored vector subset surfaced through Bioicons
-- Official Servier Medical Art raster examples and PPTX kit links
-- Real-world example projects for signaling, CRISPR workflow, and retinal pathology tutorials
-- Drag-and-drop canvas with undo/redo, keyboard nudging, snap-to-grid, layering, resizing, and export
-- Local project open/save flows with recovery drafts for destructive actions
-- Asset curation features including saved assets, recent assets, and relevance-aware library sorting
-- FigureLabs handled as **import-only**, avoiding redistribution of unclear third-party gallery assets
-- Optional AI drafting from a research brief into a structured figure plan
-- Optional AI critique for hierarchy, narrative flow, provenance risk, and caption quality
-- Citation bundle export for attribution-ready outputs
-
-## AI Design
-
-AI is architecturally meaningful in HelixCanvas, but intentionally optional.
-
-- The OpenAI API key stays on the **server**, not in the browser.
-- `POST /api/ai/plan` converts a research brief into structured JSON for a figure plan.
-- `POST /api/ai/critique` reviews the current board and returns actionable design feedback.
-- The client remains deterministic: it applies plans locally, matches suggested assets against the local library, and preserves export and attribution behavior.
-
-This keeps AI useful without making the editor opaque, costly by default, or required for baseline workflows.
-
-## Library Strategy
-
-### Bioicons
-
-Bioicons is the main searchable vector library. Asset-level source and license metadata are preserved in the generated manifest.
-
-HelixCanvas now wraps built-in sources in a versioned pack manifest so the app can show:
-
-- which packs are installed
-- how each pack handles licensing and attribution
-- whether a pack passed local manifest validation
-- a stable structure for future community-contributed packs
-
-### Servier Medical Art
-
-Servier is surfaced in two ways:
-
-- Servier-authored vectors already represented in Bioicons
-- official Servier raster assets and downloadable PPTX kits
-
-### FigureLabs
-
-FigureLabs is intentionally treated as a **user-owned import lane**. HelixCanvas does not bundle public FigureLabs gallery content as a built-in stock corpus because reuse rights are not assumed to be openly redistributable.
+- **Local-first:** the core editor is useful with no account and no cloud dependency.
+- **Provenance-first:** assets keep source and license context instead of becoming anonymous clip art.
+- **AI-optional:** the editor works without AI, and the AI path is structured rather than magical.
+- **Contributor-friendly:** packs, examples, docs, and validations are meant to be extendable in the open.
 
 ## Project Docs
 
 - [Open-source roadmap](./docs/OSS_ROADMAP.md)
+- [GitHub milestone plan](./docs/GITHUB_MILESTONES.md)
 - [Product overview](./docs/PRODUCT_OVERVIEW.md)
 - [Asset pack spec](./docs/ASSET_PACK_SPEC.md)
 - [Real biology tutorial](./docs/tutorial/README.md)
 - [Contributing guide](./CONTRIBUTING.md)
 - [Code of conduct](./CODE_OF_CONDUCT.md)
 
-## Local Development
+## Start Locally
 
 1. Clone Bioicons locally:
 
@@ -103,7 +73,7 @@ FigureLabs is intentionally treated as a **user-owned import lane**. HelixCanvas
 git clone --depth 1 https://github.com/duerrsimon/bioicons /tmp/bioicons
 ```
 
-2. Build the local Bioicons manifest:
+2. Build the library manifest:
 
 ```bash
 npm run build:library
@@ -129,7 +99,7 @@ npm run dev
 export OPENAI_API_KEY=your_key_here
 ```
 
-Use [.env.example](./.env.example) as the reference for local configuration. If you skip this step, the editor still works and AI features remain disabled.
+Use [.env.example](./.env.example) as the reference for local configuration. If you skip AI setup, the editor still works and the AI controls simply stay optional.
 
 ## Quality Checks
 
@@ -139,39 +109,61 @@ Run the local verification suite with:
 npm run check
 ```
 
-Asset-pack contributors should also know:
+Useful supporting commands:
 
 ```bash
 npm run check:packs
-npm run build:tutorial
 npm run build:library
+npm run build:tutorial
 ```
 
 GitHub Actions runs the same checks on pushes to `main` and on pull requests through [`.github/workflows/ci.yml`](./.github/workflows/ci.yml).
 
-## Project Structure
+## Current Architecture
 
-- `src/App.jsx` — main editor experience
-- `src/lib/ai.js` — browser client for local AI endpoints
-- `src/lib/assets.js` — asset ranking, recents, favorites, and suggestion helpers
-- `src/lib/assetPacks.js` — pack schema, normalization, validation, and summary helpers
+### Editor
+
+- `src/App.jsx` — main editor experience and local-first workflow
+- `src/lib/editorSelection.js` — selection, marquee, alignment, and guide helpers
+- `src/lib/layoutPresets.js` — manuscript panel layout logic
 - `src/lib/projectFiles.js` — local project file helpers and validation
-- `src/lib/history.js` — project history helpers
-- `src/data/templates.js` — starter layouts and design presets
-- `src/data/servier.js` — Servier metadata, source policy, and kit links
-- `src/lib/exporters.js` — SVG, JSON, and attribution export helpers
-- `server/index.mjs` — local API server and production host
-- `server/aiService.mjs` — OpenAI orchestration and structured output contracts
+- `src/lib/projectSnapshots.js` — named local checkpoints
+- `src/lib/reusableComponents.js` — reusable motif and component storage
+- `src/lib/reviewComments.js` — pinned review notes that persist locally
+- `src/lib/exporters.js` — SVG, PNG, PDF, JSON, and attribution export helpers
+
+### Assets
+
+- `src/lib/assets.js` — ranking, recents, favorites, and suggestion helpers
+- `src/lib/assetPacks.js` — pack schema, normalization, validation, and summary helpers
 - `packs/` — first-class committed asset pack files for built-ins and examples
 - `public/packs/` — local assets referenced by committed pack files
 - `scripts/validate-asset-pack.mjs` — pack validation CLI used locally and in CI
 - `scripts/generate-bioicons-index.mjs` — Bioicons indexing pipeline
 - `public/data/library.packs.json` — generated built-in asset pack manifest
-- `public/data/bioicons.library.json` — generated searchable asset manifest
+
+### AI
+
+- `src/lib/ai.js` — browser client for local AI endpoints
+- `server/index.mjs` — local API server and production host
+- `server/aiService.mjs` — OpenAI orchestration and structured output contracts
+
+## Roadmap Right Now
+
+The repo has already moved beyond “blank-canvas prototype” territory. The active push now is to finish the highest-leverage parity work while keeping the open-source differentiators strong.
+
+Current focus:
+
+- richer text and connector editing
+- stronger export presets for paper, slide, and poster workflows
+- better retrieval and pack discovery
+- more tutorials, examples, and contributor-facing architecture docs
+
+See [docs/OSS_ROADMAP.md](./docs/OSS_ROADMAP.md) and [docs/GITHUB_MILESTONES.md](./docs/GITHUB_MILESTONES.md) for the concrete milestone structure.
 
 ## Community
 
-If you want to help, good contribution areas include:
+Good contribution areas right now:
 
 - editor polish and interaction design
 - asset metadata and pack structure
@@ -192,6 +184,6 @@ If you want to help, good contribution areas include:
 
 - Bioicons licenses vary by asset and are preserved in the generated manifest.
 - Servier Medical Art content requires attribution and is surfaced with compliance guidance.
-- AI suggestions are intentionally **source-aware** and designed to support, not override, editorial control.
-- HelixCanvas is being developed as an open-source public-good tool, not as a commercial SaaS product.
-- The repository is released under the [Apache-2.0 license](./LICENSE).
+- FigureLabs is treated as an import lane rather than a bundled stock corpus.
+- Review comments and local snapshots stay in project workflows but do not pollute exports.
+- HelixCanvas is released under the [Apache-2.0 license](./LICENSE).

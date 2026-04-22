@@ -18,7 +18,15 @@ import {
   sortLibraryAssets,
   toggleFavoriteAssetId,
 } from "./lib/assets.js";
-import { collectProjectCitations, downloadText, projectToSvg } from "./lib/exporters.js";
+import {
+  buildExportFilename,
+  collectProjectCitations,
+  createProjectPdfBlob,
+  createProjectPngBlob,
+  downloadBlob,
+  downloadText,
+  projectToSvg,
+} from "./lib/exporters.js";
 import {
   createHistoryState,
   pushHistoryState,
@@ -26,10 +34,45 @@ import {
   undoHistoryState,
 } from "./lib/history.js";
 import {
+  alignSelectedNodes,
+  createNodeSelection,
+  distributeSelectedNodes,
+  findAlignmentGuides,
+  getNodeBounds,
+  getMarqueeRect,
+  getMarqueeSelectionIds,
+  getSelectedNodes,
+  isNodeSelected,
+  isNodeSelection,
+} from "./lib/editorSelection.js";
+import {
   createProjectDocument,
   parseProjectDocument,
   suggestProjectFilename,
 } from "./lib/projectFiles.js";
+import {
+  createProjectSnapshot,
+  pushProjectSnapshot,
+  removeProjectSnapshot,
+} from "./lib/projectSnapshots.js";
+import {
+  buildPanelLayout,
+  getPanelCellCount,
+  PANEL_LAYOUT_PRESETS,
+  placeNodesIntoPanelLayout,
+} from "./lib/layoutPresets.js";
+import {
+  createReusableComponent,
+  instantiateReusableComponent,
+  pushReusableComponent,
+  removeReusableComponent,
+} from "./lib/reusableComponents.js";
+import {
+  countOpenReviewComments,
+  createReviewComment,
+  normalizeReviewComment,
+  resolveReviewCommentPosition,
+} from "./lib/reviewComments.js";
 
 const STORAGE_KEYS = {
   project: "helixcanvas-project-v1",
@@ -38,6 +81,8 @@ const STORAGE_KEYS = {
   favoriteAssets: "helixcanvas-favorite-assets-v1",
   recentAssets: "helixcanvas-recent-assets-v1",
   recoveryDraft: "helixcanvas-recovery-draft-v1",
+  projectSnapshots: "helixcanvas-project-snapshots-v1",
+  reusableComponents: "helixcanvas-reusable-components-v1",
 };
 
 const SOURCE_FILTERS = [
@@ -81,6 +126,7 @@ function withNodeState(node) {
     rotation: node.rotation ?? 0,
     opacity: node.opacity ?? 1,
     strokeWidth: node.strokeWidth ?? 2,
+    groupId: node.groupId ?? null,
     hidden: Boolean(node.hidden),
     locked: Boolean(node.locked),
   };
@@ -123,6 +169,7 @@ function normalizeTemplate(template) {
     palette: template.palette,
     nodes,
     connectors,
+    comments: [],
     updatedAt: new Date().toISOString(),
   };
 }
@@ -155,6 +202,7 @@ function prepareLoadedProject(project) {
     connectors: (project.connectors ?? []).map((connector) =>
       withConnectorState(connector, project.palette?.accent ?? fallbackTemplate.palette.accent),
     ),
+    comments: (project.comments ?? []).map((comment) => normalizeReviewComment(comment)),
     updatedAt: project.updatedAt ?? new Date().toISOString(),
   };
 }
@@ -284,8 +332,184 @@ function makeTextNode(position) {
   });
 }
 
-function findNode(project, id) {
-  return project.nodes.find((node) => node.id === id) ?? null;
+function createCalloutAnnotation(position) {
+  const groupId = createId("group");
+  return [
+    withNodeState({
+      id: createId("node"),
+      groupId,
+      role: "annotation-callout",
+      type: "shape",
+      shape: "card",
+      title: "Callout panel",
+      text: "",
+      fill: "#fffaf3",
+      stroke: "#d6b587",
+      color: "#12232e",
+      strokeWidth: 2,
+      x: position.x,
+      y: position.y,
+      w: 320,
+      h: 152,
+    }),
+    withNodeState({
+      id: createId("node"),
+      groupId,
+      role: "annotation-title",
+      type: "text",
+      title: "Callout title",
+      text: "Key finding",
+      fontSize: 22,
+      fontWeight: 800,
+      color: "#8f4b2d",
+      x: position.x + 22,
+      y: position.y + 42,
+      w: 240,
+    }),
+    withNodeState({
+      id: createId("node"),
+      groupId,
+      role: "annotation-body",
+      type: "text",
+      title: "Callout body",
+      text: "Add a concise interpretation or methodological note here.",
+      fontSize: 16,
+      fontWeight: 500,
+      color: "#51606d",
+      x: position.x + 22,
+      y: position.y + 88,
+      w: 272,
+    }),
+  ];
+}
+
+function createLegendAnnotation(position) {
+  const groupId = createId("group");
+  return [
+    withNodeState({
+      id: createId("node"),
+      groupId,
+      role: "annotation-legend",
+      type: "shape",
+      shape: "card",
+      title: "Legend block",
+      text: "",
+      fill: "#ffffff",
+      stroke: "#d7d3cb",
+      color: "#12232e",
+      strokeWidth: 2,
+      x: position.x,
+      y: position.y,
+      w: 300,
+      h: 196,
+    }),
+    withNodeState({
+      id: createId("node"),
+      groupId,
+      type: "text",
+      title: "Legend title",
+      text: "Legend",
+      fontSize: 22,
+      fontWeight: 800,
+      color: "#12232e",
+      x: position.x + 22,
+      y: position.y + 38,
+      w: 180,
+    }),
+    withNodeState({
+      id: createId("node"),
+      groupId,
+      type: "shape",
+      shape: "card",
+      title: "Legend swatch one",
+      text: "",
+      fill: "#0f766e",
+      stroke: "#0f766e",
+      strokeWidth: 2,
+      x: position.x + 24,
+      y: position.y + 72,
+      w: 28,
+      h: 18,
+    }),
+    withNodeState({
+      id: createId("node"),
+      groupId,
+      type: "text",
+      title: "Legend label one",
+      text: "Condition A",
+      fontSize: 16,
+      fontWeight: 600,
+      color: "#51606d",
+      x: position.x + 66,
+      y: position.y + 88,
+      w: 180,
+    }),
+    withNodeState({
+      id: createId("node"),
+      groupId,
+      type: "shape",
+      shape: "card",
+      title: "Legend swatch two",
+      text: "",
+      fill: "#ea8060",
+      stroke: "#ea8060",
+      strokeWidth: 2,
+      x: position.x + 24,
+      y: position.y + 118,
+      w: 28,
+      h: 18,
+    }),
+    withNodeState({
+      id: createId("node"),
+      groupId,
+      type: "text",
+      title: "Legend label two",
+      text: "Condition B",
+      fontSize: 16,
+      fontWeight: 600,
+      color: "#51606d",
+      x: position.x + 66,
+      y: position.y + 134,
+      w: 180,
+    }),
+  ];
+}
+
+function createScaleBarAnnotation(position) {
+  const groupId = createId("group");
+  return [
+    withNodeState({
+      id: createId("node"),
+      groupId,
+      role: "annotation-scale-bar",
+      type: "shape",
+      shape: "card",
+      title: "Scale bar",
+      text: "",
+      fill: "#12232e",
+      stroke: "#12232e",
+      color: "#12232e",
+      strokeWidth: 1,
+      x: position.x,
+      y: position.y,
+      w: 140,
+      h: 10,
+    }),
+    withNodeState({
+      id: createId("node"),
+      groupId,
+      role: "annotation-scale-label",
+      type: "text",
+      title: "Scale label",
+      text: "100 um",
+      fontSize: 16,
+      fontWeight: 700,
+      color: "#12232e",
+      x: position.x + 28,
+      y: position.y + 34,
+      w: 120,
+    }),
+  ];
 }
 
 function snapValue(value, enabled) {
@@ -307,6 +531,14 @@ function isTypingTarget(target) {
 
 function openExternalLink(href) {
   window.open(href, "_blank", "noopener,noreferrer");
+}
+
+function describeGroup(groupId, count) {
+  if (!groupId || count <= 0) {
+    return "";
+  }
+
+  return count === 1 ? "Grouped layer" : `Group · ${count} layers`;
 }
 
 function buildProjectSummaryForAi(project) {
@@ -477,6 +709,7 @@ function createPlanProject(plan) {
     name: plan.title,
     brief: plan.summary,
     nodes: [titleNode, summaryNode, ...assetNodes, ...panelNodes, ...detailNodes, ...noteNodes],
+    comments: [],
     updatedAt: new Date().toISOString(),
   };
 }
@@ -731,9 +964,24 @@ function App() {
   const [recoveryDraft, setRecoveryDraft] = useState(() =>
     typeof window === "undefined" ? null : parseStoredJson(STORAGE_KEYS.recoveryDraft, null),
   );
+  const [projectSnapshots, setProjectSnapshots] = useState(() =>
+    typeof window === "undefined" ? [] : parseStoredJson(STORAGE_KEYS.projectSnapshots, []),
+  );
+  const [snapshotLabel, setSnapshotLabel] = useState("");
+  const [reusableComponents, setReusableComponents] = useState(() =>
+    typeof window === "undefined" ? [] : parseStoredJson(STORAGE_KEYS.reusableComponents, []),
+  );
+  const [componentLabel, setComponentLabel] = useState("");
   const [aiBusy, setAiBusy] = useState({
     planning: false,
     critique: false,
+  });
+  const [exportScale, setExportScale] = useState(2);
+  const [transparentExport, setTransparentExport] = useState(false);
+  const [commentsVisible, setCommentsVisible] = useState(true);
+  const [exportBusy, setExportBusy] = useState({
+    png: false,
+    pdf: false,
   });
 
   const boardRef = useRef(null);
@@ -874,6 +1122,17 @@ function App() {
   }, [recoveryDraft]);
 
   useEffect(() => {
+    window.localStorage.setItem(STORAGE_KEYS.projectSnapshots, JSON.stringify(projectSnapshots));
+  }, [projectSnapshots]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      STORAGE_KEYS.reusableComponents,
+      JSON.stringify(reusableComponents),
+    );
+  }, [reusableComponents]);
+
+  useEffect(() => {
     if (!notice) {
       return undefined;
     }
@@ -909,18 +1168,61 @@ function App() {
       const x = (event.clientX - rect.left) / zoom;
       const y = (event.clientY - rect.top) / zoom;
 
-      if (dragState.kind === "node") {
+      if (dragState.kind === "nodes") {
+        const deltaX = x - dragState.startPoint.x;
+        const deltaY = y - dragState.startPoint.y;
+        const baseMoveX = snapToGrid ? Math.round(deltaX / GRID_SIZE) * GRID_SIZE : deltaX;
+        const baseMoveY = snapToGrid ? Math.round(deltaY / GRID_SIZE) * GRID_SIZE : deltaY;
+        const guideState = findAlignmentGuides(
+          project.nodes,
+          dragState.ids,
+          dragState.originPositions,
+          baseMoveX,
+          baseMoveY,
+        );
+
+        setDragState((currentState) =>
+          currentState?.kind === "nodes"
+            ? {
+                ...currentState,
+                guides: guideState.guides,
+              }
+            : currentState,
+        );
+
         setProject((current) => {
-          const node = current.nodes.find((item) => item.id === dragState.id);
+          const selectedIdSet = new Set(dragState.ids);
+          const moveX = guideState.adjustedDeltaX;
+          const moveY = guideState.adjustedDeltaY;
+          let changed = false;
 
-          if (!node) {
-            return current;
-          }
+          const nodes = current.nodes.map((item) => {
+            if (!selectedIdSet.has(item.id)) {
+              return item;
+            }
 
-          const nextX = Math.max(0, snapValue(x - dragState.offsetX, snapToGrid));
-          const nextY = Math.max(0, snapValue(y - dragState.offsetY, snapToGrid));
+            const origin = dragState.originPositions[item.id];
 
-          if (nextX === node.x && nextY === node.y) {
+            if (!origin) {
+              return item;
+            }
+
+            const nextX = Math.max(0, origin.x + moveX);
+            const nextY = Math.max(0, origin.y + moveY);
+
+            if (nextX === item.x && nextY === item.y) {
+              return item;
+            }
+
+            changed = true;
+            return {
+              ...item,
+              x: nextX,
+              y: nextY,
+            };
+          });
+
+          if (!changed) {
             return current;
           }
 
@@ -932,18 +1234,29 @@ function App() {
 
           return {
             ...current,
-            nodes: current.nodes.map((item) =>
-              item.id === dragState.id
-                ? {
-                    ...item,
-                    x: nextX,
-                    y: nextY,
-                  }
-                : item,
-            ),
+            nodes,
             updatedAt: new Date().toISOString(),
           };
         });
+      }
+
+      if (dragState.kind === "marquee") {
+        const nextPoint = { x, y };
+        const nextRect = getMarqueeRect(dragState.startPoint, nextPoint);
+        const ids = getMarqueeSelectionIds(project.nodes, nextRect);
+        const nextIds = dragState.baseSelectionIds.length
+          ? [...dragState.baseSelectionIds, ...ids]
+          : ids;
+
+        setDragState((currentState) =>
+          currentState?.kind === "marquee"
+            ? {
+                ...currentState,
+                currentPoint: nextPoint,
+              }
+            : currentState,
+        );
+        setSelection(createNodeSelection(nextIds));
       }
 
       if (dragState.kind === "connector") {
@@ -987,6 +1300,15 @@ function App() {
     }
 
     function stopDrag() {
+      if (dragState?.kind === "marquee") {
+        const rect = getMarqueeRect(dragState.startPoint, dragState.currentPoint);
+        const isClick = rect.width < 4 && rect.height < 4;
+
+        if (isClick) {
+          setSelection(createNodeSelection(dragState.baseSelectionIds));
+        }
+      }
+
       dragHistoryCapturedRef.current = false;
       setDragState(null);
     }
@@ -998,7 +1320,7 @@ function App() {
       window.removeEventListener("pointermove", updateDrag);
       window.removeEventListener("pointerup", stopDrag);
     };
-  }, [dragState, snapToGrid, zoom]);
+  }, [dragState, project.nodes, snapToGrid, zoom]);
 
   const unifiedLibrary = [...importedAssets, ...library];
   const totalCounts = summarizeCounts(unifiedLibrary);
@@ -1034,13 +1356,55 @@ function App() {
     },
   );
 
-  const selectedNode = selection?.kind === "node" ? findNode(project, selection.id) : null;
+  const selectedNodes = getSelectedNodes(project, selection);
+  const selectedNodeIds = selectedNodes.map((node) => node.id);
+  const selectedNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
   const selectedConnector =
     selection?.kind === "connector"
       ? project.connectors.find((connector) => connector.id === selection.id) ?? null
       : null;
+  const selectedComment =
+    selection?.kind === "comment"
+      ? project.comments.find((comment) => comment.id === selection.id) ?? null
+      : null;
+  const hasNodeSelection = selectedNodes.length > 0;
+  const hasLockedSelectedNodes = selectedNodes.some((node) => node.locked);
+  const allSelectedNodesHidden = hasNodeSelection && selectedNodes.every((node) => node.hidden);
+  const allSelectedNodesLocked = hasNodeSelection && selectedNodes.every((node) => node.locked);
+  const sharedGroupId =
+    hasNodeSelection &&
+    selectedNodes.every((node) => node.groupId) &&
+    new Set(selectedNodes.map((node) => node.groupId)).size === 1
+      ? selectedNodes[0].groupId
+      : null;
+  const sharedGroupNodeIds = sharedGroupId
+    ? project.nodes.filter((node) => node.groupId === sharedGroupId).map((node) => node.id)
+    : [];
+  const isWholeGroupSelected =
+    sharedGroupId &&
+    sharedGroupNodeIds.length === selectedNodeIds.length &&
+    sharedGroupNodeIds.every((id) => selectedNodeIds.includes(id));
+  const groupBadge = sharedGroupId ? describeGroup(sharedGroupId, sharedGroupNodeIds.length) : "";
+  const selectionLabel = selectedNode
+    ? selectedNode.title ?? selectedNode.text
+    : hasNodeSelection
+      ? groupBadge || `${selectedNodes.length} layers`
+      : selectedComment
+        ? `Review note · ${selectedComment.author}`
+      : selectedConnector
+        ? "Connector"
+        : "Nothing selected";
+  const marqueeRect = dragState?.kind === "marquee"
+    ? getMarqueeRect(dragState.startPoint, dragState.currentPoint)
+    : null;
+  const dragGuides = dragState?.kind === "nodes" ? dragState.guides ?? [] : [];
   const canUndo = historyRef.current.past.length > 0;
   const canRedo = historyRef.current.future.length > 0;
+  const openCommentCount = countOpenReviewComments(project.comments ?? []);
+  const positionedComments = (project.comments ?? []).map((comment) => ({
+    comment,
+    position: resolveReviewCommentPosition(comment, project.nodes),
+  }));
   const favoriteAssets = favoriteAssetIds
     .map((id) => unifiedLibrary.find((asset) => asset.id === id))
     .filter(Boolean)
@@ -1137,6 +1501,218 @@ function App() {
     setNotice("Cleared recovery draft");
   }
 
+  function saveProjectSnapshot(options = {}) {
+    const snapshot = createProjectSnapshot(project, {
+      label: options.label ?? snapshotLabel,
+      fileName: projectFileName,
+      savedUpdatedAt: savedProjectUpdatedAt,
+    });
+
+    setProjectSnapshots((current) => pushProjectSnapshot(current, snapshot));
+    setSnapshotLabel("");
+    setNotice(`Saved snapshot: ${snapshot.label}`);
+  }
+
+  function restoreProjectSnapshot(snapshot) {
+    if (!snapshot?.project) {
+      setNotice("That snapshot is no longer available");
+      return;
+    }
+
+    projectFileHandleRef.current = null;
+    replaceProjectWorkspace(snapshot.project, {
+      fileName: snapshot.fileName ?? "",
+      savedUpdatedAt: snapshot.savedUpdatedAt ?? null,
+      notice: `Restored snapshot: ${snapshot.label}`,
+      stageReason: `Restored snapshot ${snapshot.label}`,
+    });
+  }
+
+  function deleteProjectSnapshot(snapshotId) {
+    setProjectSnapshots((current) => removeProjectSnapshot(current, snapshotId));
+    setNotice("Deleted snapshot");
+  }
+
+  function saveSelectionAsReusableComponent() {
+    if (!hasNodeSelection) {
+      setNotice("Select layers first, then save them as a reusable component");
+      return;
+    }
+
+    const component = createReusableComponent(selectedNodes, {
+      label: componentLabel,
+    });
+
+    setReusableComponents((current) => pushReusableComponent(current, component));
+    setComponentLabel("");
+    setNotice(`Saved reusable component: ${component.label}`);
+  }
+
+  function insertReusableComponent(component) {
+    const position = {
+      x: 140 + project.nodes.length * 10,
+      y: 140 + project.nodes.length * 8,
+    };
+    const nodes = instantiateReusableComponent(component, {
+      createId,
+      position,
+    }).map(withNodeState);
+
+    applyProjectChange(
+      (current) => ({
+        ...current,
+        nodes: [...current.nodes, ...nodes],
+      }),
+      {
+        selection: createNodeSelection(nodes.map((node) => node.id)),
+        notice: `Inserted component: ${component.label}`,
+      },
+    );
+  }
+
+  function deleteReusableComponent(componentId) {
+    setReusableComponents((current) => removeReusableComponent(current, componentId));
+    setNotice("Deleted reusable component");
+  }
+
+  function addAnnotationBlock(kind) {
+    const position = {
+      x: 180 + project.nodes.length * 10,
+      y: 140 + project.nodes.length * 8,
+    };
+    const nodes =
+      kind === "callout"
+        ? createCalloutAnnotation(position)
+        : kind === "legend"
+          ? createLegendAnnotation(position)
+          : createScaleBarAnnotation(position);
+
+    applyProjectChange(
+      (current) => ({
+        ...current,
+        nodes: [...current.nodes, ...nodes],
+      }),
+      {
+        selection: createNodeSelection(nodes.map((node) => node.id)),
+        notice:
+          kind === "callout"
+            ? "Added callout block"
+            : kind === "legend"
+              ? "Added legend block"
+              : "Added scale bar",
+      },
+    );
+  }
+
+  function addReviewComment(options = {}) {
+    const linkedNode = options.nodeId
+      ? project.nodes.find((node) => node.id === options.nodeId) ?? null
+      : options.attachToSelection
+        ? selectedNodes[0] ?? null
+        : null;
+    const linkedNodeBounds = linkedNode ? getNodeBounds(linkedNode) : null;
+    const position = {
+      x: options.x ?? (linkedNodeBounds ? linkedNodeBounds.right - 16 : 140 + project.comments.length * 18),
+      y: options.y ?? (linkedNodeBounds ? Math.max(24, linkedNodeBounds.top - 16) : 140 + project.comments.length * 18),
+    };
+    const comment = createReviewComment({
+      id: createId("comment"),
+      body:
+        options.body ??
+        (linkedNode
+          ? `Review ${linkedNode.title ?? linkedNode.text ?? "this layer"} and tighten the explanation.`
+          : "Add a review note for this figure."),
+      author: options.author ?? "Reviewer",
+      nodeId: linkedNode?.id ?? null,
+      x: position.x,
+      y: position.y,
+    });
+
+    applyProjectChange(
+      (current) => ({
+        ...current,
+        comments: [...(current.comments ?? []), comment],
+      }),
+      {
+        selection: { kind: "comment", id: comment.id },
+        notice: linkedNode ? "Added a pinned comment on the selected layer" : "Added a board review note",
+      },
+    );
+  }
+
+  function addCommentOnSelection() {
+    if (!hasNodeSelection) {
+      setNotice("Select a layer first, or add a board note instead");
+      return;
+    }
+
+    addReviewComment({ attachToSelection: true });
+  }
+
+  function addBoardComment() {
+    addReviewComment({
+      x: project.board.width - 220,
+      y: 104 + project.comments.length * 24,
+    });
+  }
+
+  function focusReviewComment(commentId) {
+    setSelection({ kind: "comment", id: commentId });
+  }
+
+  function updateSelectedComment(patch) {
+    if (!selectedComment) {
+      return;
+    }
+
+    applyProjectChange((current) => ({
+      ...current,
+      comments: (current.comments ?? []).map((comment) =>
+        comment.id === selectedComment.id
+          ? normalizeReviewComment({
+              ...comment,
+              ...patch,
+              updatedAt: new Date().toISOString(),
+            })
+          : comment,
+      ),
+    }));
+  }
+
+  function toggleReviewCommentStatus(commentId) {
+    const comment = (project.comments ?? []).find((item) => item.id === commentId);
+
+    if (!comment) {
+      return;
+    }
+
+    applyProjectChange((current) => ({
+      ...current,
+      comments: (current.comments ?? []).map((item) =>
+        item.id === commentId
+          ? normalizeReviewComment({
+              ...item,
+              status: item.status === "resolved" ? "open" : "resolved",
+              updatedAt: new Date().toISOString(),
+            })
+          : item,
+      ),
+    }));
+  }
+
+  function deleteReviewComment(commentId) {
+    applyProjectChange(
+      (current) => ({
+        ...current,
+        comments: (current.comments ?? []).filter((comment) => comment.id !== commentId),
+      }),
+      {
+        selection: selection?.kind === "comment" && selection.id === commentId ? null : selection,
+        notice: "Deleted review comment",
+      },
+    );
+  }
+
   function requestProjectOpen() {
     projectImportInputRef.current?.click();
   }
@@ -1224,43 +1800,248 @@ function App() {
     }
   }
 
-  function toggleNodeHidden(nodeId) {
+  function getNodeInteractionIds(nodeId) {
+    const node = project.nodes.find((item) => item.id === nodeId);
+
+    if (!node) {
+      return [];
+    }
+
+    if (!node.groupId) {
+      return [nodeId];
+    }
+
+    const groupedIds = project.nodes
+      .filter((item) => item.groupId === node.groupId)
+      .map((item) => item.id);
+
+    return groupedIds.length ? groupedIds : [nodeId];
+  }
+
+  function setNodeSelection(ids) {
+    setSelection(createNodeSelection(ids));
+  }
+
+  function toggleNodeSelection(nodeId) {
+    const interactionIds = getNodeInteractionIds(nodeId);
+
+    setSelection((currentSelection) => {
+      const currentIds = isNodeSelection(currentSelection) ? currentSelection.ids : [];
+      const hasAllIds = interactionIds.every((id) => currentIds.includes(id));
+      const nextIds = hasAllIds
+        ? currentIds.filter((id) => !interactionIds.includes(id))
+        : [...currentIds, ...interactionIds];
+      return createNodeSelection(nextIds);
+    });
+  }
+
+  function groupSelection() {
+    if (selectedNodes.length < 2) {
+      setNotice("Select at least two layers to group them");
+      return;
+    }
+
+    if (sharedGroupId && isWholeGroupSelected) {
+      setNotice("Selection is already grouped");
+      return;
+    }
+
+    const nextGroupId = createId("group");
+
     applyProjectChange(
       (current) => ({
         ...current,
         nodes: current.nodes.map((node) =>
-          node.id === nodeId ? { ...node, hidden: !node.hidden } : node,
+          selectedNodeIds.includes(node.id)
+            ? {
+                ...node,
+                groupId: nextGroupId,
+              }
+            : node,
         ),
       }),
-      { selection: { kind: "node", id: nodeId } },
+      {
+        selection: createNodeSelection(selectedNodeIds),
+        notice: "Grouped selected layers",
+      },
     );
+  }
+
+  function ungroupSelection() {
+    if (!hasNodeSelection) {
+      return;
+    }
+
+    applyProjectChange(
+      (current) => ({
+        ...current,
+        nodes: current.nodes.map((node) =>
+          selectedNodeIds.includes(node.id)
+            ? {
+                ...node,
+                groupId: null,
+              }
+            : node,
+        ),
+      }),
+      {
+        selection: createNodeSelection(selectedNodeIds),
+        notice: "Ungrouped selected layers",
+      },
+    );
+  }
+
+  function selectSharedGroup() {
+    if (!sharedGroupNodeIds.length) {
+      return;
+    }
+
+    setNodeSelection(sharedGroupNodeIds);
+    setNotice("Selected the full group");
+  }
+
+  function setNodesHidden(nodeIds, hidden) {
+    if (!nodeIds.length) {
+      return;
+    }
+
+    applyProjectChange(
+      (current) => ({
+        ...current,
+        nodes: current.nodes.map((node) =>
+          nodeIds.includes(node.id) ? { ...node, hidden } : node,
+        ),
+      }),
+      { selection: createNodeSelection(nodeIds) },
+    );
+  }
+
+  function setNodesLocked(nodeIds, locked) {
+    if (!nodeIds.length) {
+      return;
+    }
+
+    applyProjectChange(
+      (current) => ({
+        ...current,
+        nodes: current.nodes.map((node) =>
+          nodeIds.includes(node.id) ? { ...node, locked } : node,
+        ),
+      }),
+      { selection: createNodeSelection(nodeIds) },
+    );
+  }
+
+  function toggleNodeHidden(nodeId) {
+    const node = project.nodes.find((item) => item.id === nodeId);
+
+    if (!node) {
+      return;
+    }
+
+    setNodesHidden([nodeId], !node.hidden);
   }
 
   function toggleNodeLocked(nodeId) {
-    applyProjectChange(
-      (current) => ({
-        ...current,
-        nodes: current.nodes.map((node) =>
-          node.id === nodeId ? { ...node, locked: !node.locked } : node,
-        ),
-      }),
-      { selection: { kind: "node", id: nodeId } },
-    );
+    const node = project.nodes.find((item) => item.id === nodeId);
+
+    if (!node) {
+      return;
+    }
+
+    setNodesLocked([nodeId], !node.locked);
+  }
+
+  function toggleSelectedNodesHidden() {
+    setNodesHidden(selectedNodeIds, !allSelectedNodesHidden);
+  }
+
+  function toggleSelectedNodesLocked() {
+    setNodesLocked(selectedNodeIds, !allSelectedNodesLocked);
+  }
+
+  function handleLayerSelect(node, event) {
+    if (event.shiftKey) {
+      toggleNodeSelection(node.id);
+      return;
+    }
+
+    setNodeSelection(getNodeInteractionIds(node.id));
+  }
+
+  function handleCanvasPointerDown(event) {
+    const isBoardTarget =
+      event.target === event.currentTarget || event.target.classList?.contains("connector-layer");
+
+    if (!isBoardTarget) {
+      return;
+    }
+
+    const board = boardRef.current;
+
+    if (!board) {
+      return;
+    }
+
+    const rect = board.getBoundingClientRect();
+    const point = {
+      x: (event.clientX - rect.left) / zoom,
+      y: (event.clientY - rect.top) / zoom,
+    };
+    const baseSelectionIds = event.shiftKey && isNodeSelection(selection) ? selection.ids : [];
+
+    if (!event.shiftKey) {
+      setSelection(null);
+    }
+
+    setDragState({
+      kind: "marquee",
+      startPoint: point,
+      currentPoint: point,
+      baseSelectionIds,
+    });
   }
 
   function handleNodePointerDown(node, event) {
-    setSelection({ kind: "node", id: node.id });
+    event.preventDefault();
+    event.stopPropagation();
+
+    const interactionIds = getNodeInteractionIds(node.id);
+
+    if (event.shiftKey) {
+      toggleNodeSelection(node.id);
+      return;
+    }
+
+    const currentIds =
+      isNodeSelection(selection) && interactionIds.every((id) => selection.ids.includes(id))
+        ? selection.ids
+        : interactionIds;
+    const dragNodes = project.nodes.filter((item) => currentIds.includes(item.id));
+
+    setNodeSelection(currentIds);
 
     if (node.locked) {
       return;
     }
 
-    const rect = event.currentTarget.getBoundingClientRect();
+    if (dragNodes.some((item) => item.locked)) {
+      setNotice("Unlock selected layers before moving them together");
+      return;
+    }
+
+    const rect = boardRef.current?.getBoundingClientRect() ?? event.currentTarget.getBoundingClientRect();
     setDragState({
-      kind: "node",
-      id: node.id,
-      offsetX: (event.clientX - rect.left) / zoom,
-      offsetY: (event.clientY - rect.top) / zoom,
+      kind: "nodes",
+      ids: currentIds,
+      guides: [],
+      startPoint: {
+        x: (event.clientX - rect.left) / zoom,
+        y: (event.clientY - rect.top) / zoom,
+      },
+      originPositions: Object.fromEntries(
+        dragNodes.map((item) => [item.id, { x: item.x, y: item.y }]),
+      ),
     });
   }
 
@@ -1340,11 +2121,29 @@ function App() {
         return;
       }
 
-      if (metaKey && event.key.toLowerCase() === "d" && selectedNode) {
+      if (metaKey && event.key.toLowerCase() === "a") {
+        event.preventDefault();
+        setNodeSelection(project.nodes.map((node) => node.id));
+        return;
+      }
+
+      if (metaKey && event.key.toLowerCase() === "g" && event.shiftKey) {
+        event.preventDefault();
+        ungroupSelection();
+        return;
+      }
+
+      if (metaKey && event.key.toLowerCase() === "g") {
+        event.preventDefault();
+        groupSelection();
+        return;
+      }
+
+      if (metaKey && event.key.toLowerCase() === "d" && hasNodeSelection) {
         event.preventDefault();
 
-        if (selectedNode.locked) {
-          setNotice("Unlock this layer before duplicating it");
+        if (hasLockedSelectedNodes) {
+          setNotice("Unlock selected layers before duplicating them");
           return;
         }
 
@@ -1359,18 +2158,23 @@ function App() {
       if (event.key === "Backspace" || event.key === "Delete") {
         event.preventDefault();
 
-        if (selection.kind === "node" && selectedNode?.locked) {
-          setNotice("Unlock this layer before deleting it");
+        if (isNodeSelection(selection) && hasLockedSelectedNodes) {
+          setNotice("Unlock selected layers before deleting them");
           return;
         }
 
         applyProjectChange(
           (current) =>
-            selection.kind === "node"
+            isNodeSelection(selection)
               ? {
                   ...current,
-                  nodes: current.nodes.filter((node) => node.id !== selection.id),
+                  nodes: current.nodes.filter((node) => !selection.ids.includes(node.id)),
                 }
+              : selection.kind === "comment"
+                ? {
+                    ...current,
+                    comments: (current.comments ?? []).filter((comment) => comment.id !== selection.id),
+                  }
               : {
                   ...current,
                   connectors: current.connectors.filter((connector) => connector.id !== selection.id),
@@ -1380,22 +2184,23 @@ function App() {
         return;
       }
 
-      if (selectedNode && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
+      if (hasNodeSelection && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
         event.preventDefault();
 
-        if (selectedNode.locked) {
-          setNotice("Unlock this layer before moving it");
+        if (hasLockedSelectedNodes) {
+          setNotice("Unlock selected layers before moving them");
           return;
         }
 
         const step = event.shiftKey ? GRID_SIZE : 8;
         const deltaX = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
         const deltaY = event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
+        const selectedIdSet = new Set(selectedNodeIds);
 
         applyProjectChange((current) => ({
           ...current,
           nodes: current.nodes.map((node) =>
-            node.id === selectedNode.id
+            selectedIdSet.has(node.id)
               ? {
                   ...node,
                   x: Math.max(0, snapValue(node.x + deltaX, snapToGrid && event.shiftKey)),
@@ -1409,7 +2214,7 @@ function App() {
 
     window.addEventListener("keydown", handleKeydown);
     return () => window.removeEventListener("keydown", handleKeydown);
-  }, [project.updatedAt, selectedNode, selection, snapToGrid, historyVersion]);
+  }, [groupSelection, hasLockedSelectedNodes, hasNodeSelection, historyVersion, project.nodes, selectedNodeIds, selection, snapToGrid, ungroupSelection]);
 
   function addAssetToCanvas(asset) {
     const offset = 120 + project.nodes.length * 18;
@@ -1420,7 +2225,7 @@ function App() {
         ...current,
         nodes: [...current.nodes, newNode],
       }),
-      { selection: { kind: "node", id: newNode.id } },
+      { selection: createNodeSelection([newNode.id]) },
     );
     registerAssetUsage(asset);
   }
@@ -1436,7 +2241,7 @@ function App() {
         ...current,
         nodes: [...current.nodes, newNode],
       }),
-      { selection: { kind: "node", id: newNode.id } },
+      { selection: createNodeSelection([newNode.id]) },
     );
   }
 
@@ -1451,7 +2256,7 @@ function App() {
         ...current,
         nodes: [...current.nodes, newNode],
       }),
-      { selection: { kind: "node", id: newNode.id } },
+      { selection: createNodeSelection([newNode.id]) },
     );
   }
 
@@ -1470,6 +2275,53 @@ function App() {
         connectors: [...current.connectors, connector],
       }),
       { selection: { kind: "connector", id: connector.id } },
+    );
+  }
+
+  function insertPanelLayout(presetId) {
+    const layout = buildPanelLayout(presetId, project.board, project.palette, createId);
+
+    applyProjectChange(
+      (current) => ({
+        ...current,
+        nodes: [...layout.nodes, ...current.nodes],
+      }),
+      {
+        selection: createNodeSelection(layout.nodes.map((node) => node.id)),
+        notice: `Inserted ${layout.preset.title} panel layout`,
+      },
+    );
+  }
+
+  function placeSelectionIntoLayout(presetId) {
+    if (!hasNodeSelection) {
+      setNotice("Select layers first, then place them into a panel layout");
+      return;
+    }
+
+    const cellCount = getPanelCellCount(presetId);
+
+    if (selectedNodes.length > cellCount) {
+      setNotice(`This layout holds ${cellCount} slots, but ${selectedNodes.length} layers are selected`);
+      return;
+    }
+
+    if (hasLockedSelectedNodes) {
+      setNotice("Unlock selected layers before placing them into a layout");
+      return;
+    }
+
+    const layout = buildPanelLayout(presetId, project.board, project.palette, createId);
+
+    applyProjectChange(
+      (current) => ({
+        ...current,
+        nodes: placeNodesIntoPanelLayout(current.nodes, selectedNodeIds, layout.cells),
+      }),
+      {
+        selection: createNodeSelection(selectedNodeIds),
+        notice: `Placed selection into ${layout.preset.title}`,
+      },
     );
   }
 
@@ -1637,54 +2489,127 @@ function App() {
     }));
   }
 
+  function alignSelection(mode) {
+    if (selectedNodes.length < 2) {
+      return;
+    }
+
+    if (hasLockedSelectedNodes) {
+      setNotice("Unlock selected layers before aligning them");
+      return;
+    }
+
+    applyProjectChange(
+      (current) => {
+        const nodes = alignSelectedNodes(current.nodes, selectedNodeIds, mode);
+        const changed = nodes.some((node, index) => node !== current.nodes[index]);
+        return changed
+          ? {
+              ...current,
+              nodes,
+            }
+          : current;
+      },
+      { selection: createNodeSelection(selectedNodeIds) },
+    );
+  }
+
+  function distributeSelection(axis) {
+    if (selectedNodes.length < 3) {
+      return;
+    }
+
+    if (hasLockedSelectedNodes) {
+      setNotice("Unlock selected layers before distributing them");
+      return;
+    }
+
+    applyProjectChange(
+      (current) => {
+        const nodes = distributeSelectedNodes(current.nodes, selectedNodeIds, axis);
+        const changed = nodes.some((node, index) => node !== current.nodes[index]);
+        return changed
+          ? {
+              ...current,
+              nodes,
+            }
+          : current;
+      },
+      { selection: createNodeSelection(selectedNodeIds) },
+    );
+  }
+
   function duplicateSelection() {
-    if (!selectedNode) {
+    if (!hasNodeSelection) {
       return;
     }
 
-    if (selectedNode.locked) {
-      setNotice("Unlock this layer before duplicating it");
+    if (hasLockedSelectedNodes) {
+      setNotice("Unlock selected layers before duplicating them");
       return;
     }
 
-    const duplicate = {
-      ...selectedNode,
+    const duplicateGroupIds = new Map();
+    const duplicates = selectedNodes.map((node) => ({
+      ...node,
       id: createId("node"),
-      x: selectedNode.x + 32,
-      y: selectedNode.y + 32,
+      groupId: node.groupId
+        ? (duplicateGroupIds.has(node.groupId)
+            ? duplicateGroupIds.get(node.groupId)
+            : duplicateGroupIds.set(node.groupId, createId("group")).get(node.groupId))
+        : null,
+      x: node.x + 32,
+      y: node.y + 32,
       locked: false,
       hidden: false,
-    };
+    }));
 
     applyProjectChange(
       (current) => ({
         ...current,
-        nodes: [...current.nodes, duplicate],
+        nodes: [...current.nodes, ...duplicates],
       }),
-      { selection: { kind: "node", id: duplicate.id } },
+      { selection: createNodeSelection(duplicates.map((node) => node.id)) },
     );
   }
 
   function bringForward() {
-    if (!selectedNode) {
+    if (!hasNodeSelection) {
       return;
     }
 
-    if (selectedNode.locked) {
-      setNotice("Unlock this layer before reordering it");
+    if (hasLockedSelectedNodes) {
+      setNotice("Unlock selected layers before reordering them");
       return;
     }
 
     applyProjectChange((current) => {
-      const index = current.nodes.findIndex((node) => node.id === selectedNode.id);
+      const selectedIdSet = new Set(selectedNodeIds);
+      const nodes = [...current.nodes];
+      let changed = false;
 
-      if (index < 0 || index === current.nodes.length - 1) {
-        return current;
+      for (let index = nodes.length - 2; index >= 0; index -= 1) {
+        if (!selectedIdSet.has(nodes[index].id)) {
+          continue;
+        }
+
+        let nextIndex = index + 1;
+
+        while (nextIndex < nodes.length && selectedIdSet.has(nodes[nextIndex].id)) {
+          nextIndex += 1;
+        }
+
+        if (nextIndex >= nodes.length) {
+          continue;
+        }
+
+        [nodes[index], nodes[nextIndex]] = [nodes[nextIndex], nodes[index]];
+        changed = true;
       }
 
-      const nodes = [...current.nodes];
-      const [item] = nodes.splice(index, 1);
-      nodes.splice(index + 1, 0, item);
+      if (!changed) {
+        return current;
+      }
       return {
         ...current,
         nodes,
@@ -1693,25 +2618,42 @@ function App() {
   }
 
   function sendBackward() {
-    if (!selectedNode) {
+    if (!hasNodeSelection) {
       return;
     }
 
-    if (selectedNode.locked) {
-      setNotice("Unlock this layer before reordering it");
+    if (hasLockedSelectedNodes) {
+      setNotice("Unlock selected layers before reordering them");
       return;
     }
 
     applyProjectChange((current) => {
-      const index = current.nodes.findIndex((node) => node.id === selectedNode.id);
+      const selectedIdSet = new Set(selectedNodeIds);
+      const nodes = [...current.nodes];
+      let changed = false;
 
-      if (index <= 0) {
-        return current;
+      for (let index = 1; index < nodes.length; index += 1) {
+        if (!selectedIdSet.has(nodes[index].id)) {
+          continue;
+        }
+
+        let previousIndex = index - 1;
+
+        while (previousIndex >= 0 && selectedIdSet.has(nodes[previousIndex].id)) {
+          previousIndex -= 1;
+        }
+
+        if (previousIndex < 0) {
+          continue;
+        }
+
+        [nodes[index], nodes[previousIndex]] = [nodes[previousIndex], nodes[index]];
+        changed = true;
       }
 
-      const nodes = [...current.nodes];
-      const [item] = nodes.splice(index, 1);
-      nodes.splice(index - 1, 0, item);
+      if (!changed) {
+        return current;
+      }
       return {
         ...current,
         nodes,
@@ -1720,8 +2662,60 @@ function App() {
   }
 
   function exportProjectSvg() {
-    downloadText("helixcanvas-export.svg", projectToSvg(project), "image/svg+xml;charset=utf-8");
-    setNotice("Exported SVG");
+    downloadText(
+      buildExportFilename(project.name || "helixcanvas-export", "svg"),
+      projectToSvg(project, { includeBackground: !transparentExport }),
+      "image/svg+xml;charset=utf-8",
+    );
+    setNotice(transparentExport ? "Exported SVG without board background" : "Exported SVG");
+  }
+
+  async function exportProjectPng() {
+    setExportBusy((current) => ({ ...current, png: true }));
+
+    try {
+      const { blob, warnings } = await createProjectPngBlob(project, {
+        scale: exportScale,
+        includeBackground: !transparentExport,
+      });
+
+      downloadBlob(buildExportFilename(project.name || "helixcanvas-export", "png"), blob);
+      setNotice(
+        warnings.length
+          ? warnings[0]
+          : transparentExport
+            ? `Exported PNG at ${exportScale}x with transparency`
+            : `Exported PNG at ${exportScale}x`,
+      );
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "PNG export failed");
+    } finally {
+      setExportBusy((current) => ({ ...current, png: false }));
+    }
+  }
+
+  async function exportProjectPdf() {
+    setExportBusy((current) => ({ ...current, pdf: true }));
+
+    try {
+      const { blob, warnings } = await createProjectPdfBlob(project, {
+        scale: exportScale,
+        includeBackground: !transparentExport,
+      });
+
+      downloadBlob(buildExportFilename(project.name || "helixcanvas-export", "pdf"), blob);
+      setNotice(
+        warnings.length
+          ? warnings[0]
+          : transparentExport
+            ? `Exported PDF at ${exportScale}x with a white page background`
+            : `Exported PDF at ${exportScale}x`,
+      );
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "PDF export failed");
+    } finally {
+      setExportBusy((current) => ({ ...current, pdf: false }));
+    }
   }
 
   function exportProjectJson() {
@@ -1863,8 +2857,11 @@ function App() {
           <button type="button" className="ghost-button" onClick={copyCitationBundle}>
             Copy attributions
           </button>
-          <button type="button" className="primary-button" onClick={exportProjectSvg}>
+          <button type="button" className="ghost-button" onClick={exportProjectSvg}>
             Export SVG
+          </button>
+          <button type="button" className="primary-button" onClick={exportProjectPng} disabled={exportBusy.png}>
+            {exportBusy.png ? "Exporting PNG..." : "Export PNG"}
           </button>
         </div>
       </header>
@@ -1971,6 +2968,181 @@ function App() {
               hidden
               onChange={importProjectFromFile}
             />
+          </div>
+
+          <div className="panel">
+            <div className="panel__head">
+              <h3>Snapshots</h3>
+              <span>{projectSnapshots.length} local checkpoints</span>
+            </div>
+            <p className="helper-copy">
+              Save checkpoints before a major restructure, template swap, or export pass. Snapshots stay local to this browser and can be restored without touching your current file on disk.
+            </p>
+            <div className="stack-row">
+              <input
+                className="text-input"
+                value={snapshotLabel}
+                onChange={(event) => setSnapshotLabel(event.target.value)}
+                placeholder="Optional snapshot label"
+              />
+              <button type="button" className="secondary-button" onClick={() => saveProjectSnapshot()}>
+                Save snapshot
+              </button>
+            </div>
+            <div className="snapshot-list">
+              {projectSnapshots.length ? (
+                projectSnapshots.map((snapshot) => (
+                  <article key={snapshot.id} className="snapshot-card">
+                    <div className="snapshot-card__head">
+                      <strong>{snapshot.label}</strong>
+                      <span>{new Date(snapshot.createdAt).toLocaleString()}</span>
+                    </div>
+                    <p>
+                      {snapshot.project?.name || "HelixCanvas figure"}
+                      {snapshot.fileName ? ` · ${snapshot.fileName}` : ""}
+                    </p>
+                    <div className="stack-row">
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => restoreProjectSnapshot(snapshot)}
+                      >
+                        Restore
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => deleteProjectSnapshot(snapshot.id)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <p className="helper-copy">
+                  No snapshots yet. Save one before a big figure revision and it will appear here.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel__head">
+              <h3>Export</h3>
+              <span>{transparentExport ? "Transparent raster" : "Board background included"}</span>
+            </div>
+            <p className="helper-copy">
+              Export the current figure as SVG, PNG, or PDF. Use higher scale for slides and posters, or transparent PNG when the figure needs to sit on another layout.
+            </p>
+            <div className="inspector-grid">
+              <label>
+                Raster scale
+                <select value={exportScale} onChange={(event) => setExportScale(Number(event.target.value))}>
+                  <option value="1">1x</option>
+                  <option value="2">2x</option>
+                  <option value="3">3x</option>
+                </select>
+              </label>
+              <label className="toggle-field">
+                Background
+                <button
+                  type="button"
+                  className={`ghost-button ${transparentExport ? "is-toggled" : ""}`}
+                  onClick={() => setTransparentExport((value) => !value)}
+                >
+                  {transparentExport ? "Transparent" : "Board color"}
+                </button>
+              </label>
+            </div>
+            <div className="stack-row">
+              <button
+                type="button"
+                className="primary-button"
+                onClick={exportProjectPng}
+                disabled={exportBusy.png}
+              >
+                {exportBusy.png ? "Exporting PNG..." : "Download PNG"}
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={exportProjectPdf}
+                disabled={exportBusy.pdf}
+              >
+                {exportBusy.pdf ? "Exporting PDF..." : "Download PDF"}
+              </button>
+              <button type="button" className="ghost-button" onClick={exportProjectSvg}>
+                Download SVG
+              </button>
+            </div>
+            <div className="library-summary">
+              <span>{project.board.width} × {project.board.height} board</span>
+              <span>{exportScale}x raster output</span>
+              <span>{transparentExport ? "PNG alpha on" : "Opaque export"}</span>
+            </div>
+            <p className="helper-copy">
+              PDF export uses a white page when transparency is enabled, since PDF raster export is flattened for broad compatibility.
+            </p>
+          </div>
+
+          <div className="panel">
+            <div className="panel__head">
+              <h3>Reusable components</h3>
+              <span>{reusableComponents.length} saved snippets</span>
+            </div>
+            <p className="helper-copy">
+              Turn any selected cluster into a reusable component, then drop it back into later figures as a starting point.
+            </p>
+            <div className="stack-row">
+              <input
+                className="text-input"
+                value={componentLabel}
+                onChange={(event) => setComponentLabel(event.target.value)}
+                placeholder="Optional component label"
+              />
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={saveSelectionAsReusableComponent}
+                disabled={!hasNodeSelection}
+              >
+                Save selection
+              </button>
+            </div>
+            <div className="component-list">
+              {reusableComponents.length ? (
+                reusableComponents.map((component) => (
+                  <article key={component.id} className="component-card">
+                    <div className="component-card__head">
+                      <strong>{component.label}</strong>
+                      <span>{component.nodes.length} layers</span>
+                    </div>
+                    <p>{new Date(component.createdAt).toLocaleString()}</p>
+                    <div className="stack-row">
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => insertReusableComponent(component)}
+                      >
+                        Insert
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => deleteReusableComponent(component.id)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <p className="helper-copy">
+                  No saved components yet. Select a motif or pathway cluster and save it here for reuse.
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="panel">
@@ -2196,7 +3368,7 @@ function App() {
                   key={asset.id}
                   asset={asset}
                   onAdd={addAssetToCanvas}
-                  active={selectedNode?.assetId === asset.id}
+                  active={selectedNodes.some((node) => node.assetId === asset.id)}
                   onSelectSource={focusSource}
                   onSelectPack={focusPack}
                   onToggleFavorite={toggleFavorite}
@@ -2286,6 +3458,22 @@ function App() {
                 <button type="button" className="ghost-button" onClick={addText}>
                   Add text
                 </button>
+                <button type="button" className="ghost-button" onClick={() => addAnnotationBlock("callout")}>
+                  Callout
+                </button>
+                <button type="button" className="ghost-button" onClick={() => addAnnotationBlock("legend")}>
+                  Legend
+                </button>
+                <button type="button" className="ghost-button" onClick={() => addAnnotationBlock("scale-bar")}>
+                  Scale bar
+                </button>
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={hasNodeSelection ? addCommentOnSelection : addBoardComment}
+                >
+                  Comment
+                </button>
                 <button type="button" className="ghost-button" onClick={addConnector}>
                   Add connector
                 </button>
@@ -2307,6 +3495,11 @@ function App() {
               <div className="toolbar-hints">
                 <span>Cmd/Ctrl+Z undo</span>
                 <span>Cmd/Ctrl+D duplicate</span>
+                <span>Cmd/Ctrl+G group</span>
+                <span>Shift+click multi-select</span>
+                <span>Comments stay out of exports</span>
+                <span>Save selections as components</span>
+                <span>Grouped layers move together</span>
                 <span>Shift+arrows coarse nudge</span>
               </div>
               <div className="template-row">
@@ -2336,11 +3529,7 @@ function App() {
                   transform: `scale(${zoom})`,
                   transformOrigin: "top left",
                 }}
-                onPointerDown={(event) => {
-                  if (event.target === event.currentTarget) {
-                    setSelection(null);
-                  }
-                }}
+                onPointerDown={handleCanvasPointerDown}
               >
                 <svg
                   className="connector-layer"
@@ -2371,7 +3560,10 @@ function App() {
                           strokeWidth={connector.strokeWidth}
                           markerEnd="url(#arrowhead-live)"
                           strokeLinecap="round"
-                          onPointerDown={() => setSelection({ kind: "connector", id: connector.id })}
+                          onPointerDown={(event) => {
+                            event.stopPropagation();
+                            setSelection({ kind: "connector", id: connector.id });
+                          }}
                         />
                         {isSelected ? (
                           <>
@@ -2382,13 +3574,14 @@ function App() {
                               fill="#ffffff"
                               stroke={connector.stroke}
                               strokeWidth="3"
-                              onPointerDown={() =>
+                              onPointerDown={(event) => {
+                                event.stopPropagation();
                                 setDragState({
                                   kind: "connector",
                                   id: connector.id,
                                   handle: "from",
-                                })
-                              }
+                                });
+                              }}
                             />
                             <circle
                               cx={connector.to.x}
@@ -2397,13 +3590,14 @@ function App() {
                               fill="#ffffff"
                               stroke={connector.stroke}
                               strokeWidth="3"
-                              onPointerDown={() =>
+                              onPointerDown={(event) => {
+                                event.stopPropagation();
                                 setDragState({
                                   kind: "connector",
                                   id: connector.id,
                                   handle: "to",
-                                })
-                              }
+                                });
+                              }}
                             />
                           </>
                         ) : null}
@@ -2413,7 +3607,7 @@ function App() {
                 </svg>
 
                 {project.nodes.map((node) => {
-                  const isSelected = selection?.kind === "node" && selection.id === node.id;
+                  const isSelected = isNodeSelected(selection, node.id);
 
                   if (node.hidden) {
                     return null;
@@ -2425,6 +3619,10 @@ function App() {
                         key={node.id}
                         type="button"
                         className={`node node--asset ${isSelected ? "is-selected" : ""} ${
+                          node.role === "panel-frame" ? "node--panel" : ""
+                        } ${
+                          node.groupId ? "is-grouped" : ""
+                        } ${
                           node.locked ? "is-locked" : ""
                         }`}
                         style={{
@@ -2448,6 +3646,10 @@ function App() {
                         key={node.id}
                         type="button"
                         className={`node node--text ${isSelected ? "is-selected" : ""} ${
+                          node.role === "panel-label" ? "node--panel-label" : ""
+                        } ${
+                          node.groupId ? "is-grouped" : ""
+                        } ${
                           node.locked ? "is-locked" : ""
                         }`}
                         style={{
@@ -2472,6 +3674,10 @@ function App() {
                       key={node.id}
                       type="button"
                       className={`node node--shape ${isSelected ? "is-selected" : ""} ${
+                        node.role === "panel-frame" ? "node--panel" : ""
+                      } ${
+                        node.groupId ? "is-grouped" : ""
+                      } ${
                         node.locked ? "is-locked" : ""
                       }`}
                       style={{
@@ -2492,6 +3698,70 @@ function App() {
                     </button>
                   );
                 })}
+
+                {commentsVisible
+                  ? positionedComments.map(({ comment, position }, index) => {
+                      const isSelected =
+                        selection?.kind === "comment" && selection.id === comment.id;
+
+                      return (
+                        <button
+                          key={comment.id}
+                          type="button"
+                          className={`review-pin ${isSelected ? "is-selected" : ""} ${
+                            comment.status === "resolved" ? "is-resolved" : ""
+                          }`}
+                          style={{
+                            left: position.x,
+                            top: position.y,
+                          }}
+                          title={`${position.targetLabel} · ${comment.author}`}
+                          onPointerDown={(event) => {
+                            event.stopPropagation();
+                            setSelection({ kind: "comment", id: comment.id });
+                          }}
+                        >
+                          <span>{index + 1}</span>
+                        </button>
+                      );
+                    })
+                  : null}
+
+                {marqueeRect ? (
+                  <div
+                    className="selection-marquee"
+                    style={{
+                      left: marqueeRect.left,
+                      top: marqueeRect.top,
+                      width: marqueeRect.width,
+                      height: marqueeRect.height,
+                    }}
+                  />
+                ) : null}
+
+                {dragGuides.map((guide) =>
+                  guide.orientation === "vertical" ? (
+                    <div
+                      key={`vertical-${guide.x}-${guide.start}-${guide.end}`}
+                      className="alignment-guide alignment-guide--vertical"
+                      style={{
+                        left: guide.x,
+                        top: guide.start,
+                        height: Math.max(0, guide.end - guide.start),
+                      }}
+                    />
+                  ) : (
+                    <div
+                      key={`horizontal-${guide.y}-${guide.start}-${guide.end}`}
+                      className="alignment-guide alignment-guide--horizontal"
+                      style={{
+                        left: guide.start,
+                        top: guide.y,
+                        width: Math.max(0, guide.end - guide.start),
+                      }}
+                    />
+                  ),
+                )}
               </div>
             </div>
           </div>
@@ -2501,14 +3771,113 @@ function App() {
           <div className="panel">
             <div className="panel__head">
               <h3>Selection inspector</h3>
-              <span>
-                {selectedNode ? selectedNode.title : selectedConnector ? "Connector" : "Nothing selected"}
-              </span>
+              <span>{selectionLabel}</span>
             </div>
-            {!selectedNode && !selectedConnector ? (
+            {!hasNodeSelection && !selectedConnector && !selectedComment ? (
               <p className="helper-copy">
                 Select an object on the board to edit copy, layout, appearance, and citation data.
               </p>
+            ) : null}
+
+            {hasNodeSelection && !selectedNode ? (
+              <div className="inspector-stack">
+                <p className="helper-copy">
+                  Batch editing is active for {selectedNodes.length} layers. Use alignment, visibility,
+                  locking, duplication, and order controls together.
+                </p>
+                <div className="stack-row">
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={toggleSelectedNodesHidden}
+                  >
+                    {allSelectedNodesHidden ? "Show selected" : "Hide selected"}
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={toggleSelectedNodesLocked}
+                  >
+                    {allSelectedNodesLocked ? "Unlock selected" : "Lock selected"}
+                  </button>
+                </div>
+                {hasLockedSelectedNodes ? (
+                  <p className="helper-copy">
+                    One or more selected layers are locked. Unlock them before moving, aligning, or duplicating the set.
+                  </p>
+                ) : null}
+                <div className="stack-row">
+                  <button type="button" className="secondary-button" onClick={groupSelection}>
+                    Group selection
+                  </button>
+                  <button type="button" className="ghost-button" onClick={addCommentOnSelection}>
+                    Comment on selection
+                  </button>
+                  <button type="button" className="ghost-button" onClick={saveSelectionAsReusableComponent}>
+                    Save as component
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={ungroupSelection}
+                    disabled={!selectedNodes.some((node) => node.groupId)}
+                  >
+                    Ungroup
+                  </button>
+                  {sharedGroupId && !isWholeGroupSelected ? (
+                    <button type="button" className="ghost-button" onClick={selectSharedGroup}>
+                      Select full group
+                    </button>
+                  ) : null}
+                </div>
+                <div className="batch-action-grid">
+                  <button type="button" className="secondary-button" onClick={() => alignSelection("left")}>
+                    Align left
+                  </button>
+                  <button type="button" className="secondary-button" onClick={() => alignSelection("center")}>
+                    Align center
+                  </button>
+                  <button type="button" className="secondary-button" onClick={() => alignSelection("right")}>
+                    Align right
+                  </button>
+                  <button type="button" className="secondary-button" onClick={() => alignSelection("top")}>
+                    Align top
+                  </button>
+                  <button type="button" className="secondary-button" onClick={() => alignSelection("middle")}>
+                    Align middle
+                  </button>
+                  <button type="button" className="secondary-button" onClick={() => alignSelection("bottom")}>
+                    Align bottom
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => distributeSelection("horizontal")}
+                    disabled={selectedNodes.length < 3}
+                  >
+                    Distribute X
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => distributeSelection("vertical")}
+                    disabled={selectedNodes.length < 3}
+                  >
+                    Distribute Y
+                  </button>
+                </div>
+                <div className="stack-row">
+                  <button type="button" className="secondary-button" onClick={duplicateSelection}>
+                    Duplicate selection
+                  </button>
+                  <button type="button" className="ghost-button" onClick={bringForward}>
+                    Bring forward
+                  </button>
+                  <button type="button" className="ghost-button" onClick={sendBackward}>
+                    Send back
+                  </button>
+                </div>
+              </div>
             ) : null}
 
             {selectedNode ? (
@@ -2528,6 +3897,22 @@ function App() {
                   >
                     {selectedNode.locked ? "Unlock layer" : "Lock layer"}
                   </button>
+                  {selectedNode.groupId ? (
+                    <>
+                      <button type="button" className="ghost-button" onClick={selectSharedGroup}>
+                        Select group
+                      </button>
+                      <button type="button" className="ghost-button" onClick={ungroupSelection}>
+                        Ungroup
+                      </button>
+                    </>
+                  ) : null}
+                  <button type="button" className="ghost-button" onClick={addCommentOnSelection}>
+                    Add comment
+                  </button>
+                  <button type="button" className="ghost-button" onClick={saveSelectionAsReusableComponent}>
+                    Save as component
+                  </button>
                 </div>
 
                 {selectedNode.hidden ? (
@@ -2541,6 +3926,16 @@ function App() {
                     This layer is locked. Unlock it to edit, move, duplicate, or delete it.
                   </p>
                 ) : null}
+
+                {selectedNode.groupId ? (
+                  <p className="helper-copy">
+                    {describeGroup(selectedNode.groupId, sharedGroupNodeIds.length || 1)}. Clicking one member selects and drags the full set.
+                  </p>
+                ) : (
+                  <p className="helper-copy">
+                    Shift-click additional layers, then use the batch inspector to group them into one movable set.
+                  </p>
+                )}
 
                 <fieldset className="inspector-fieldset" disabled={selectedNode.locked}>
                   <label>
@@ -2715,6 +4110,54 @@ function App() {
               </div>
             ) : null}
 
+            {selectedComment ? (
+              <div className="inspector-stack">
+                <p className="helper-copy">
+                  Review comments are local-first markup for coauthor and PI feedback. They stay in the project and snapshot history, but they are not included in figure export.
+                </p>
+                <label>
+                  Reviewer
+                  <input
+                    className="text-input"
+                    value={selectedComment.author}
+                    onChange={(event) => updateSelectedComment({ author: event.target.value })}
+                  />
+                </label>
+                <label>
+                  Comment
+                  <textarea
+                    value={selectedComment.body}
+                    onChange={(event) => updateSelectedComment({ body: event.target.value })}
+                  />
+                </label>
+                <div className="library-summary">
+                  <span>
+                    {
+                      resolveReviewCommentPosition(selectedComment, project.nodes).targetLabel
+                    }
+                  </span>
+                  <span>{selectedComment.status === "resolved" ? "Resolved" : "Open"}</span>
+                  <span>{new Date(selectedComment.updatedAt).toLocaleString()}</span>
+                </div>
+                <div className="stack-row">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => toggleReviewCommentStatus(selectedComment.id)}
+                  >
+                    {selectedComment.status === "resolved" ? "Reopen comment" : "Resolve comment"}
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => deleteReviewComment(selectedComment.id)}
+                  >
+                    Delete comment
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
             {selectedConnector ? (
               <div className="inspector-stack">
                 <div className="inspector-grid">
@@ -2815,6 +4258,130 @@ function App() {
 
           <div className="panel">
             <div className="panel__head">
+              <h3>Figure layout</h3>
+              <span>{hasNodeSelection ? `${selectedNodes.length} layers ready` : "Panels + placement"}</span>
+            </div>
+            <p className="helper-copy">
+              Insert manuscript-style panel frames or flow the current selection into a clean grid without hand-placing every element.
+            </p>
+            <div className="layout-preset-list">
+              {PANEL_LAYOUT_PRESETS.map((preset) => {
+                const slotCount = preset.columns * preset.rows;
+                const canPlaceSelection = hasNodeSelection && selectedNodes.length <= slotCount;
+
+                return (
+                  <article key={preset.id} className="layout-preset-card">
+                    <div className="layout-preset-card__head">
+                      <strong>{preset.title}</strong>
+                      <span>{slotCount} slots</span>
+                    </div>
+                    <p>{preset.description}</p>
+                    <div className="stack-row">
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => insertPanelLayout(preset.id)}
+                      >
+                        Insert panels
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => placeSelectionIntoLayout(preset.id)}
+                        disabled={!canPlaceSelection}
+                      >
+                        Place selection
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel__head">
+              <h3>Review comments</h3>
+              <span>{openCommentCount} open · {(project.comments ?? []).length} total</span>
+            </div>
+            <p className="helper-copy">
+              Pin comments to the board or to a selected layer while you iterate. These notes remain in the local project and snapshots, but exports stay clean.
+            </p>
+            <div className="stack-row">
+              <button type="button" className="secondary-button" onClick={addBoardComment}>
+                Add board note
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={addCommentOnSelection}
+                disabled={!hasNodeSelection}
+              >
+                Comment on selection
+              </button>
+              <button
+                type="button"
+                className={`ghost-button ${commentsVisible ? "is-toggled" : ""}`}
+                onClick={() => setCommentsVisible((value) => !value)}
+              >
+                {commentsVisible ? "Hide pins" : "Show pins"}
+              </button>
+            </div>
+            <div className="snapshot-list">
+              {positionedComments.length ? (
+                positionedComments.map(({ comment, position }, index) => (
+                  <article
+                    key={comment.id}
+                    className={`comment-card ${
+                      selection?.kind === "comment" && selection.id === comment.id ? "is-active" : ""
+                    }`}
+                  >
+                    <div className="comment-card__head">
+                      <strong>Comment {index + 1}</strong>
+                      <span className={`severity-chip severity-chip--${comment.status === "resolved" ? "low" : "medium"}`}>
+                        {comment.status === "resolved" ? "resolved" : "open"}
+                      </span>
+                    </div>
+                    <p>{comment.body}</p>
+                    <div className="library-summary">
+                      <span>{position.targetLabel}</span>
+                      <span>{comment.author}</span>
+                    </div>
+                    <div className="stack-row">
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => focusReviewComment(comment.id)}
+                      >
+                        Focus
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => toggleReviewCommentStatus(comment.id)}
+                      >
+                        {comment.status === "resolved" ? "Reopen" : "Resolve"}
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => deleteReviewComment(comment.id)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <p className="helper-copy">
+                  No review comments yet. Add a board note for general feedback or pin one to a selected layer.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel__head">
               <h3>Layer order</h3>
               <span>{project.nodes.length} nodes</span>
             </div>
@@ -2823,19 +4390,20 @@ function App() {
                 <div
                   key={node.id}
                   className={`layer-item ${
-                    selection?.kind === "node" && selection.id === node.id ? "is-active" : ""
+                    isNodeSelected(selection, node.id) ? "is-active" : ""
                   }`}
                 >
                   <button
                     type="button"
                     className="layer-item__select"
-                    onClick={() => setSelection({ kind: "node", id: node.id })}
+                    onClick={(event) => handleLayerSelect(node, event)}
                   >
                     <span>{project.nodes.length - index}</span>
                     <div>
                       <strong>{node.title ?? node.text}</strong>
                       <small>
                         {node.type}
+                        {node.groupId ? " · grouped" : ""}
                         {node.hidden ? " · hidden" : ""}
                         {node.locked ? " · locked" : ""}
                       </small>

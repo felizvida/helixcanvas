@@ -33,6 +33,22 @@ A release is considered mature when it is:
 - useful without paid services
 - maintainable by more than one person
 
+## Where The Repo Stands Now
+
+The project has already crossed a meaningful threshold from concept to usable local workbench.
+
+Shipped foundation:
+
+- validated built-in asset packs with provenance summaries
+- local project files, recovery drafts, and named snapshots
+- marquee selection, grouping, align/distribute, alignment guides, and panel layouts
+- reusable components plus common annotation blocks
+- inline local review comments that stay out of exports
+- SVG, PNG, PDF, JSON, and attribution export paths
+- real biology examples and tutorial artifacts
+
+That means the near-term roadmap is now about refinement and trust: better text and connector controls, stronger export presets, improved retrieval, and clearer contributor architecture.
+
 ## Milestones
 
 ### v0.2 Product Polish
@@ -72,6 +88,11 @@ Release criteria:
 - attribution output is reliable and reviewable
 - new asset packs can be added without modifying core editor logic
 
+Status:
+
+- built-in packs, pack validation, and contributor-facing pack docs are already in place
+- the next work here is retrieval quality, private/local pack install paths, and richer on-canvas provenance UX
+
 ### v0.4 Community Release
 
 Goal: make the repository easy to adopt and contribute to.
@@ -89,6 +110,11 @@ Release criteria:
 - a new contributor can get the project running quickly
 - contribution expectations are documented and consistent
 - maintainers have enough automation to review changes confidently
+
+Status:
+
+- contributor docs, templates, tutorial assets, and CI are already present
+- the remaining lift is sharper architecture docs, more examples, and easier contribution lanes
 
 ### v0.5 Optional AI Providers
 
@@ -134,6 +160,8 @@ Release criteria:
 - `v0.5 Optional AI`
 - `v1.0 Public-Good Launch`
 
+For a more operational issue-by-issue plan aimed at closing the gap with BioRender while preserving HelixCanvas's open-source direction, see [GITHUB_MILESTONES.md](./GITHUB_MILESTONES.md).
+
 ## Recommended Label Lanes
 
 - `editor`
@@ -160,8 +188,8 @@ People should be able to help in clearly scoped ways:
 
 ## Next Concrete Steps
 
-1. Complete the local-first editor polish loop.
-2. Define the pack and manifest format for assets.
-3. Add example projects and tutorial docs.
-4. Split optional AI behind a provider boundary.
-5. Build toward a stable public release rather than a hosted service.
+1. Finish richer text and connector controls.
+2. Add export presets for paper, slide, and poster workflows.
+3. Improve search and retrieval across packs.
+4. Add contributor architecture docs for editor, packs, exports, and AI boundaries.
+5. Keep building toward a stable public-good release rather than a hosted service.

@@ -70,7 +70,8 @@ Publication-ready figures need hierarchy, restraint, clarity, and credibility. T
 4. The app suggests matching assets from Bioicons, Servier-derived vectors, Servier originals, or user imports.
 5. The user edits text, layout, connectors, and scale.
 6. The optional AI critique reviews the draft for clarity and compliance issues.
-7. The figure is exported as SVG or JSON, with attribution text available for publication workflows.
+7. The user saves local checkpoints, reusable motifs, and review notes as the figure evolves.
+8. The figure is exported as SVG, PNG, PDF, or JSON, with attribution text available for publication workflows.
 
 ## Current Feature Set
 
@@ -88,14 +89,25 @@ Publication-ready figures need hierarchy, restraint, clarity, and credibility. T
 - text nodes
 - shape nodes
 - connectors
+- marquee multi-select
+- grouping and ungrouping
+- align and distribute controls
+- live alignment guides
 - layer order controls
 - lock and hide controls
+- panel layout presets
+- reusable components
+- callout, legend, and scale-bar blocks
+- pinned review comments
 - selection inspector
 - undo and redo
 - asset favorites and recents
 - local project open/save flows
 - recovery draft support for destructive actions
+- named local snapshots
 - SVG export
+- PNG export
+- PDF export
 - JSON export
 - citation bundle export
 
@@ -187,6 +199,19 @@ HelixCanvas is not trying to outdo specialized scientific illustration products 
 
 The project is especially compelling for people and teams that care about provenance, reproducibility, open-science alignment, or zero-cost access.
 
+## Current Status Snapshot
+
+HelixCanvas is already beyond the earliest proof-of-concept phase. The repo now has:
+
+- first-class asset packs with validation and provenance summaries
+- local project files, recovery drafts, and named snapshots
+- editor-depth features like marquee selection, grouping, align/distribute, panel layouts, and reusable components
+- review-friendly pinned comments that remain local-first and stay out of exports
+- SVG, PNG, PDF, JSON, and attribution output paths
+- real biology examples and tutorial artifacts for multiple figure styles
+
+That means the current gap is no longer “can this make a figure?” The remaining work is about deeper text and connector controls, stronger retrieval, richer export presets, and smoother contributor ergonomics.
+
 ## Risks and Open Questions
 
 ### Asset licensing complexity
@@ -212,7 +237,8 @@ See [OSS_ROADMAP.md](./OSS_ROADMAP.md) for the active milestone plan.
 Near-term priorities are:
 
 - editor polish and local project reliability
-- asset manifest and pack maturity
+- export and presentation presets
+- asset manifest and retrieval maturity
 - contributor experience and public documentation
 - optional AI provider boundaries
 

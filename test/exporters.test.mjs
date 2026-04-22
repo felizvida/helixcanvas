@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { collectProjectCitations, projectToSvg } from "../src/lib/exporters.js";
+import {
+  buildExportFilename,
+  buildPdfFromJpegBytes,
+  collectProjectCitations,
+  projectToSvg,
+} from "../src/lib/exporters.js";
 
 test("collectProjectCitations deduplicates repeated citations", () => {
   const citations = collectProjectCitations({
@@ -74,4 +79,41 @@ test("projectToSvg renders escaped text, connectors, and assets", () => {
   assert.match(svg, /<image[^>]+https:\/\/example.com\/cell\.svg/);
   assert.match(svg, /marker-end="url\(#arrowhead\)"/);
   assert.doesNotMatch(svg, /Hidden note/);
+});
+
+test("projectToSvg can omit the board background for transparent exports", () => {
+  const svg = projectToSvg(
+    {
+      board: {
+        width: 640,
+        height: 480,
+        background: "#f7f2ea",
+      },
+      connectors: [],
+      nodes: [],
+    },
+    { includeBackground: false },
+  );
+
+  assert.doesNotMatch(svg, /<rect width="640" height="480" fill="#f7f2ea"/);
+});
+
+test("buildExportFilename normalizes project names for downloads", () => {
+  assert.equal(buildExportFilename("EGFR / ERK Figure", "png"), "egfr-erk-figure.png");
+});
+
+test("buildPdfFromJpegBytes returns a simple one-page pdf document", () => {
+  const pdfBytes = buildPdfFromJpegBytes({
+    jpegBytes: Uint8Array.of(0xff, 0xd8, 0xff, 0xd9),
+    imageWidth: 1200,
+    imageHeight: 800,
+    pageWidth: 600,
+    pageHeight: 400,
+  });
+  const pdfText = new TextDecoder().decode(pdfBytes);
+
+  assert.match(pdfText, /^%PDF-1\.4/);
+  assert.match(pdfText, /\/Type \/Page/);
+  assert.match(pdfText, /\/Filter \/DCTDecode/);
+  assert.match(pdfText, /\/MediaBox \[0 0 600 400\]/);
 });
