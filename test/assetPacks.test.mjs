@@ -29,10 +29,12 @@ test("createLibraryPackManifest normalizes packs and assets", () => {
   ]);
 
   assert.equal(manifest.schemaVersion, 1);
+  assert.equal("generatedAt" in manifest, false);
   assert.equal(manifest.packs.length, 1);
   assert.equal(manifest.packs[0].assetCount, 1);
   assert.equal(manifest.packs[0].assets[0].packId, "bioicons-community");
   assert.equal(manifest.packs[0].assets[0].packTitle, "Bioicons Community");
+  assert.equal(manifest.packs[0].generatedAt, null);
 });
 
 test("parseLibraryPackManifest preserves built-in pack metadata and summaries", () => {

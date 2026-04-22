@@ -71,7 +71,6 @@ const hasBioiconsCheckout = Boolean(iconsRoot) && fs.existsSync(iconsRoot);
 const authors = hasBioiconsCheckout && fs.existsSync(authorsPath)
   ? JSON.parse(fs.readFileSync(authorsPath, "utf8"))
   : {};
-const generatedAt = new Date().toISOString();
 let items = [];
 
 if (hasBioiconsCheckout) {
@@ -162,8 +161,7 @@ if (invalidPacks.length) {
 }
 
 const libraryManifest = createLibraryPackManifest(
-  [createBioiconsCommunityPack(items, { generatedAt }), ...fileBasedPacks],
-  { generatedAt },
+  [createBioiconsCommunityPack(items), ...fileBasedPacks],
 );
 
 fs.mkdirSync(outputDir, { recursive: true });

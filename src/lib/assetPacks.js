@@ -344,19 +344,24 @@ export function summarizeLibraryPacks(packs) {
   };
 }
 
-export function createLibraryPackManifest(packs, { generatedAt = new Date().toISOString() } = {}) {
+export function createLibraryPackManifest(packs, { generatedAt } = {}) {
   const normalizedPacks = packs.map((pack) => normalizeAssetPack(pack));
 
-  return {
+  const manifest = {
     schemaVersion: LIBRARY_PACK_SCHEMA_VERSION,
-    generatedAt,
     stats: summarizeLibraryPacks(normalizedPacks),
     packs: normalizedPacks,
   };
+
+  if (generatedAt) {
+    manifest.generatedAt = generatedAt;
+  }
+
+  return manifest;
 }
 
-export function createBioiconsCommunityPack(assets, { generatedAt = new Date().toISOString() } = {}) {
-  return normalizeAssetPack({
+export function createBioiconsCommunityPack(assets, { generatedAt } = {}) {
+  const pack = {
     id: "bioicons-community",
     title: "Bioicons Community",
     description:
@@ -370,10 +375,15 @@ export function createBioiconsCommunityPack(assets, { generatedAt = new Date().t
     licenseStrategy: "per-asset",
     attributionStrategy: "per-asset",
     maintainedBy: "HelixCanvas",
-    generatedAt,
     tags: ["open", "svg", "biomedical", "community"],
     assets,
-  });
+  };
+
+  if (generatedAt) {
+    pack.generatedAt = generatedAt;
+  }
+
+  return normalizeAssetPack(pack);
 }
 
 export function createServierOriginalPack(
@@ -383,10 +393,10 @@ export function createServierOriginalPack(
     licenseLabel = "CC BY 4.0",
     licenseUrl = "",
     defaultCitation = "",
-    generatedAt = new Date().toISOString(),
+    generatedAt,
   } = {},
 ) {
-  return normalizeAssetPack({
+  const pack = {
     id: "servier-originals",
     title: "Servier Medical Art Originals",
     description:
@@ -404,8 +414,13 @@ export function createServierOriginalPack(
     primaryLicenseUrl: licenseUrl,
     defaultCitation,
     maintainedBy: "HelixCanvas",
-    generatedAt,
     tags: ["official", "medical-art", "png", "servier"],
     assets,
-  });
+  };
+
+  if (generatedAt) {
+    pack.generatedAt = generatedAt;
+  }
+
+  return normalizeAssetPack(pack);
 }
