@@ -1,0 +1,42 @@
+{
+  "id": "community-demo",
+  "title": "Community Demo Pack",
+  "description": "A tiny self-authored example pack that shows how to ship local SVG assets with shared provenance and licensing metadata.",
+  "version": "1.0.0",
+  "homepage": "https://github.com/felizvida/helixcanvas/tree/main/packs/examples",
+  "sourceBucket": "community",
+  "sourceLabel": "Community Pack",
+  "kind": "example",
+  "provenance": "community-curated",
+  "licenseStrategy": "shared",
+  "attributionStrategy": "shared",
+  "primaryLicenseLabel": "CC0 1.0",
+  "primaryLicenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "defaultCitation": "Community Demo Pack by HelixCanvas contributors is released under CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/).",
+  "maintainedBy": "HelixCanvas",
+  "tags": ["example", "community", "local-assets"],
+  "assets": [
+    {
+      "id": "community-demo:signal-relay",
+      "title": "Signal relay",
+      "category": "Cellular biology",
+      "categoryLabel": "Cellular biology",
+      "originLabel": "HelixCanvas contributors",
+      "assetType": "svg",
+      "assetUrl": "/packs/community-demo/signal-relay.svg",
+      "previewUrl": "/packs/community-demo/signal-relay.svg",
+      "sourcePage": "https://github.com/felizvida/helixcanvas/tree/main/packs/examples"
+    },
+    {
+      "id": "community-demo:cell-dialogue",
+      "title": "Cell dialogue",
+      "category": "Immunology",
+      "categoryLabel": "Immunology",
+      "originLabel": "HelixCanvas contributors",
+      "assetType": "svg",
+      "assetUrl": "/packs/community-demo/cell-dialogue.svg",
+      "previewUrl": "/packs/community-demo/cell-dialogue.svg",
+      "sourcePage": "https://github.com/felizvida/helixcanvas/tree/main/packs/examples"
+    }
+  ]
+}

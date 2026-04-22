@@ -1,6 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { createBioiconsCommunityPack, createLibraryPackManifest } from "../src/lib/assetPacks.js";
+import { loadPackDirectory } from "./lib/packFiles.mjs";
+
 const LICENSES = {
   bsd: {
     label: "BSD 3-Clause",
@@ -59,65 +62,72 @@ function titleCase(value) {
 }
 
 const bioiconsDir = process.env.BIOICONS_DIR || process.argv[2];
-
-if (!bioiconsDir) {
-  console.error("Missing Bioicons directory. Pass BIOICONS_DIR or the path as an argument.");
-  process.exit(1);
-}
-
-const iconsRoot = path.join(bioiconsDir, "static", "icons");
-const authorsPath = path.join(iconsRoot, "authors.json");
 const outputDir = path.join(process.cwd(), "public", "data");
-
-if (!fs.existsSync(iconsRoot)) {
-  console.error(`Bioicons icons directory not found: ${iconsRoot}`);
-  process.exit(1);
-}
-
-const authors = fs.existsSync(authorsPath)
+const packsDir = path.join(process.cwd(), "packs");
+const cachedLibraryPath = path.join(outputDir, "bioicons.library.json");
+const iconsRoot = bioiconsDir ? path.join(bioiconsDir, "static", "icons") : "";
+const authorsPath = iconsRoot ? path.join(iconsRoot, "authors.json") : "";
+const hasBioiconsCheckout = Boolean(iconsRoot) && fs.existsSync(iconsRoot);
+const authors = hasBioiconsCheckout && fs.existsSync(authorsPath)
   ? JSON.parse(fs.readFileSync(authorsPath, "utf8"))
   : {};
+const generatedAt = new Date().toISOString();
+let items = [];
 
-const items = walk(iconsRoot).map((fullPath) => {
-  const relativePath = path.relative(iconsRoot, fullPath).split(path.sep).join("/");
-  const parts = relativePath.split("/");
-  const licenseCode = parts[0];
-  const categoryCode = parts[1];
-  const filename = parts.at(-1);
-  const authorDir = parts.length === 4 ? parts[2] : "Bioicons";
-  const name = filename.replace(/\.svg$/i, "");
-  const authorLabel = authorDir.replaceAll("_", " ");
-  const license = LICENSES[licenseCode] ?? {
-    label: licenseCode,
-    url: "",
-  };
-  const isServier = authorLabel === "Servier" || authorLabel === "ModifiedFrom Servier";
-  const categoryLabel = titleCase(categoryCode);
+if (hasBioiconsCheckout) {
+  items = walk(iconsRoot).map((fullPath) => {
+    const relativePath = path.relative(iconsRoot, fullPath).split(path.sep).join("/");
+    const parts = relativePath.split("/");
+    const licenseCode = parts[0];
+    const categoryCode = parts[1];
+    const filename = parts.at(-1);
+    const authorDir = parts.length === 4 ? parts[2] : "Bioicons";
+    const name = filename.replace(/\.svg$/i, "");
+    const authorLabel = authorDir.replaceAll("_", " ");
+    const license = LICENSES[licenseCode] ?? {
+      label: licenseCode,
+      url: "",
+    };
+    const isServier = authorLabel === "Servier" || authorLabel === "ModifiedFrom Servier";
+    const categoryLabel = titleCase(categoryCode);
 
-  return {
-    id: `bioicons:${licenseCode}:${categoryCode}:${authorDir}:${name}`,
-    title: titleCase(name),
-    slug: name,
-    searchText: `${name} ${categoryLabel} ${authorLabel} ${license.label}`.toLowerCase(),
-    category: categoryCode,
-    categoryLabel,
-    author: authorLabel,
-    authorUrl: authors[authorLabel] ?? "",
-    sourceBucket: isServier ? "servier-vector" : "bioicons",
-    sourceLabel: isServier ? "Servier via Bioicons" : "Bioicons",
-    originLabel: authorLabel,
-    assetType: "svg",
-    assetUrl: `https://raw.githubusercontent.com/duerrsimon/bioicons/main/static/icons/${relativePath}`,
-    previewUrl: `https://raw.githubusercontent.com/duerrsimon/bioicons/main/static/icons/${relativePath}`,
-    sourcePage: "https://bioicons.com/",
-    licenseCode,
-    licenseLabel: license.label,
-    licenseUrl: license.url,
-    citation: `${titleCase(name)} by ${authorLabel} via Bioicons is licensed under ${license.label}${
-      license.url ? ` (${license.url})` : ""
-    }.`,
-  };
-});
+    return {
+      id: `bioicons:${licenseCode}:${categoryCode}:${authorDir}:${name}`,
+      title: titleCase(name),
+      slug: name,
+      searchText: `${name} ${categoryLabel} ${authorLabel} ${license.label}`.toLowerCase(),
+      category: categoryCode,
+      categoryLabel,
+      author: authorLabel,
+      authorUrl: authors[authorLabel] ?? "",
+      sourceBucket: isServier ? "servier-vector" : "bioicons",
+      sourceLabel: isServier ? "Servier via Bioicons" : "Bioicons",
+      originLabel: authorLabel,
+      assetType: "svg",
+      assetUrl: `https://raw.githubusercontent.com/duerrsimon/bioicons/main/static/icons/${relativePath}`,
+      previewUrl: `https://raw.githubusercontent.com/duerrsimon/bioicons/main/static/icons/${relativePath}`,
+      sourcePage: "https://bioicons.com/",
+      licenseCode,
+      licenseLabel: license.label,
+      licenseUrl: license.url,
+      citation: `${titleCase(name)} by ${authorLabel} via Bioicons is licensed under ${license.label}${
+        license.url ? ` (${license.url})` : ""
+      }.`,
+    };
+  });
+} else if (fs.existsSync(cachedLibraryPath)) {
+  items = JSON.parse(fs.readFileSync(cachedLibraryPath, "utf8"));
+  console.warn(
+    `Bioicons checkout not found${
+      bioiconsDir ? ` at ${iconsRoot}` : ""
+    }. Reusing cached manifest at ${cachedLibraryPath}.`,
+  );
+} else {
+  console.error(
+    "Missing Bioicons checkout and no cached manifest available. Pass BIOICONS_DIR or add public/data/bioicons.library.json.",
+  );
+  process.exit(1);
+}
 
 items.sort((left, right) => {
   if (left.sourceBucket !== right.sourceBucket) {
@@ -138,6 +148,24 @@ const stats = {
   categories: [...new Set(items.map((item) => item.categoryLabel))].length,
 };
 
+const discoveredPacks = loadPackDirectory(packsDir);
+const fileBasedPacks = discoveredPacks.filter((pack) => pack.status === "ready");
+const invalidPacks = discoveredPacks.filter((pack) => pack.status !== "ready");
+
+if (invalidPacks.length) {
+  invalidPacks.forEach((pack) => {
+    for (const error of pack.validation?.errors ?? []) {
+      console.error(`${pack.sourceFile}: ${error}`);
+    }
+  });
+  process.exit(1);
+}
+
+const libraryManifest = createLibraryPackManifest(
+  [createBioiconsCommunityPack(items, { generatedAt }), ...fileBasedPacks],
+  { generatedAt },
+);
+
 fs.mkdirSync(outputDir, { recursive: true });
 fs.writeFileSync(
   path.join(outputDir, "bioicons.library.json"),
@@ -147,7 +175,18 @@ fs.writeFileSync(
   path.join(outputDir, "bioicons.stats.json"),
   JSON.stringify(stats, null, 2),
 );
+fs.writeFileSync(
+  path.join(outputDir, "library.packs.json"),
+  JSON.stringify(libraryManifest, null, 2),
+);
+fs.writeFileSync(
+  path.join(outputDir, "library.stats.json"),
+  JSON.stringify(libraryManifest.stats, null, 2),
+);
 
 console.log(
   `Wrote ${items.length} Bioicons records to ${path.join(outputDir, "bioicons.library.json")}`,
+);
+console.log(
+  `Wrote ${libraryManifest.packs.length} library packs to ${path.join(outputDir, "library.packs.json")}`,
 );

@@ -1,0 +1,80 @@
+{
+  "id": "servier-originals",
+  "title": "Servier Medical Art Originals",
+  "description": "Official Servier Medical Art raster examples curated alongside the editor with a shared attribution requirement.",
+  "version": "1.0.0",
+  "homepage": "https://smart.servier.com/",
+  "sourceBucket": "servier-original",
+  "sourceLabel": "Servier Original",
+  "kind": "built-in",
+  "provenance": "official-source",
+  "licenseStrategy": "shared",
+  "attributionStrategy": "shared",
+  "primaryLicenseLabel": "CC BY 4.0",
+  "primaryLicenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+  "defaultCitation": "Image provided by Servier Medical Art (https://smart.servier.com/), licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).",
+  "maintainedBy": "HelixCanvas",
+  "tags": ["official", "medical-art", "png", "servier"],
+  "assets": [
+    {
+      "id": "servier-original:protein",
+      "title": "Protein",
+      "searchText": "protein enzyme molecule servier",
+      "category": "Proteins",
+      "categoryLabel": "Proteins",
+      "originLabel": "Servier Medical Art",
+      "assetType": "png",
+      "assetUrl": "https://smart.servier.com/wp-content/uploads/2016/10/protein_01.png",
+      "previewUrl": "https://smart.servier.com/wp-content/uploads/2016/10/protein_01.png",
+      "sourcePage": "https://smart.servier.com/smart_image/protein/"
+    },
+    {
+      "id": "servier-original:hippocampus",
+      "title": "Brain - hippocampus",
+      "searchText": "brain hippocampus anatomy neurology servier",
+      "category": "Neurology",
+      "categoryLabel": "Neurology",
+      "originLabel": "Servier Medical Art",
+      "assetType": "png",
+      "assetUrl": "https://smart.servier.com/wp-content/uploads/2016/10/hypocampe.png",
+      "previewUrl": "https://smart.servier.com/wp-content/uploads/2016/10/hypocampe.png",
+      "sourcePage": "https://smart.servier.com/smart_image/hippocampus/"
+    },
+    {
+      "id": "servier-original:retina",
+      "title": "Retina",
+      "searchText": "retina eye visual anatomy servier",
+      "category": "Ophthalmology",
+      "categoryLabel": "Ophthalmology",
+      "originLabel": "Servier Medical Art",
+      "assetType": "png",
+      "assetUrl": "https://smart.servier.com/wp-content/uploads/2016/10/retine_08.png",
+      "previewUrl": "https://smart.servier.com/wp-content/uploads/2016/10/retine_08.png",
+      "sourcePage": "https://smart.servier.com/smart_image/ov-retina-smart/"
+    },
+    {
+      "id": "servier-original:pneumothorax",
+      "title": "Pneumothorax",
+      "searchText": "lung respiratory pneumothorax pathology servier",
+      "category": "Respiratory system",
+      "categoryLabel": "Respiratory system",
+      "originLabel": "Servier Medical Art",
+      "assetType": "png",
+      "assetUrl": "https://smart.servier.com/wp-content/uploads/2016/10/Pneumothorax1.png",
+      "previewUrl": "https://smart.servier.com/wp-content/uploads/2016/10/Pneumothorax1.png",
+      "sourcePage": "https://smart.servier.com/smart_image/pneumothorax/"
+    },
+    {
+      "id": "servier-original:ecg",
+      "title": "Normal ECG",
+      "searchText": "ecg cardiology graph diagnostics servier",
+      "category": "Scientific graphs",
+      "categoryLabel": "Scientific graphs",
+      "originLabel": "Servier Medical Art",
+      "assetType": "png",
+      "assetUrl": "https://smart.servier.com/wp-content/uploads/2016/10/ECGentier2.png",
+      "previewUrl": "https://smart.servier.com/wp-content/uploads/2016/10/ECGentier2.png",
+      "sourcePage": "https://smart.servier.com/smart_image/smart-ecg/"
+    }
+  ]
+}

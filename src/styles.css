@@ -298,6 +298,8 @@ button:disabled {
 }
 
 .asset-grid,
+.pack-list,
+.example-list,
 .kit-list,
 .layer-list,
 .source-list,
@@ -396,6 +398,8 @@ button:disabled {
 }
 
 .asset-card,
+.pack-card,
+.example-card,
 .kit-card,
 .policy-card,
 .source-box,
@@ -409,6 +413,8 @@ button:disabled {
 }
 
 .ai-summary p,
+.pack-card p,
+.example-card p,
 .ai-suggestion p,
 .ai-issue p {
   margin: 8px 0 0;
@@ -514,6 +520,65 @@ button:disabled {
   object-fit: contain;
 }
 
+.pack-card__head,
+.example-card__head,
+.pack-card__actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.pack-card__head p {
+  max-width: 42ch;
+}
+
+.example-card__head p {
+  max-width: 44ch;
+}
+
+.pack-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.pack-card__meta span,
+.pack-status {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.pack-card__actions {
+  margin-top: 12px;
+}
+
+.example-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.pack-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 92px;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(15, 118, 110, 0.08);
+  color: var(--accent);
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.pack-status--needs-review {
+  background: rgba(234, 128, 96, 0.14);
+  color: #a64a2e;
+}
+
 .asset-card__head,
 .policy-card__head,
 .kit-card__actions {
@@ -524,6 +589,8 @@ button:disabled {
 }
 
 .asset-card h4,
+.pack-card h4,
+.example-card h4,
 .kit-card h4,
 .policy-card h4 {
   margin: 0;
@@ -553,6 +620,7 @@ button:disabled {
 
 .asset-card__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 12px;
 }

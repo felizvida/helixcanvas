@@ -1,0 +1,50 @@
+[
+  {
+    "id": "egfr-mapk-nsclc",
+    "title": "EGFR to ERK signaling in NSCLC",
+    "problem": "Create a mechanism figure showing ligand-triggered EGFR signaling, ERK nuclear translocation, and immediate early transcription in non-small-cell lung cancer.",
+    "summary": "A ready-to-edit mechanistic schematic for receptor signaling, gene expression, and growth output.",
+    "tags": [
+      "Signaling",
+      "Oncology",
+      "Mechanism"
+    ],
+    "artifacts": {
+      "svg": "egfr-mapk-nsclc.svg",
+      "project": "egfr-to-erk-signaling-in-nsclc.helixcanvas.json",
+      "citations": "egfr-mapk-nsclc.citations.txt"
+    }
+  },
+  {
+    "id": "rela-crispr-macrophage",
+    "title": "RELA CRISPR knockout workflow",
+    "problem": "Lay out a methods figure for a macrophage perturbation experiment testing whether RELA knockout suppresses TNF-alpha-induced NF-kappaB signaling.",
+    "summary": "A methods-first figure with perturbation, stimulation, and orthogonal readouts already composed.",
+    "tags": [
+      "Workflow",
+      "CRISPR",
+      "Immunology"
+    ],
+    "artifacts": {
+      "svg": "rela-crispr-macrophage.svg",
+      "project": "rela-crispr-knockout-workflow.helixcanvas.json",
+      "citations": "rela-crispr-macrophage.citations.txt"
+    }
+  },
+  {
+    "id": "retinal-complement-degeneration",
+    "title": "Complement deposition in retinal degeneration",
+    "problem": "Build a pathology figure for retinal degeneration that highlights complement tagging, photoreceptor stress, and recruitment of phagocytic cells.",
+    "summary": "A disease-overview composition for retina papers, lecture slides, or grant schematics.",
+    "tags": [
+      "Neurobiology",
+      "Retina",
+      "Pathology"
+    ],
+    "artifacts": {
+      "svg": "retinal-complement-degeneration.svg",
+      "project": "complement-deposition-in-retinal-degeneration.helixcanvas.json",
+      "citations": "retinal-complement-degeneration.citations.txt"
+    }
+  }
+]

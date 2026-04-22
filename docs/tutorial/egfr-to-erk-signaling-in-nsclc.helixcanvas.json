@@ -1,0 +1,275 @@
+{
+  "format": "helixcanvas-project",
+  "version": 1,
+  "exportedAt": "2026-04-22T02:52:33.554Z",
+  "project": {
+    "name": "EGFR to ERK signaling in NSCLC",
+    "brief": "EGFR activation drives the RAS-RAF-MEK-ERK cascade and immediate early transcription in epithelial tumor cells.",
+    "board": {
+      "width": 1400,
+      "height": 900,
+      "background": "#f6f1e8"
+    },
+    "palette": {
+      "background": "#f6f1e8",
+      "accent": "#0f766e",
+      "accentSoft": "#d8f0ee",
+      "ink": "#12232e",
+      "coral": "#ea8060",
+      "olive": "#90a85f"
+    },
+    "nodes": [
+      {
+        "type": "text",
+        "text": "EGFR to ERK signaling in NSCLC",
+        "x": 94,
+        "y": 62,
+        "w": 520,
+        "fontSize": 34,
+        "fontWeight": 700,
+        "color": "#12232e"
+      },
+      {
+        "type": "text",
+        "text": "Use this as a fast starting point for pathway figures, drug-response schematics, or graphical abstracts.",
+        "x": 94,
+        "y": 92,
+        "w": 720,
+        "fontSize": 16,
+        "fontWeight": 500,
+        "color": "#4d5d68"
+      },
+      {
+        "type": "asset",
+        "title": "Cell complete",
+        "assetUrl": "https://raw.githubusercontent.com/duerrsimon/bioicons/main/static/icons/cc-by-3.0/Intracellular_components/Servier/cell-complete.svg",
+        "sourceLabel": "Servier via Bioicons",
+        "citation": "cell-complete by Servier via Bioicons is licensed under CC BY 3.0.",
+        "x": 86,
+        "y": 160,
+        "w": 360,
+        "h": 360
+      },
+      {
+        "type": "asset",
+        "title": "Simple Receptor",
+        "assetUrl": "https://raw.githubusercontent.com/duerrsimon/bioicons/main/static/icons/cc-by-sa-4.0/Receptors_channels/Helicase_11/simple_receptor.svg",
+        "sourceLabel": "Bioicons",
+        "citation": "Simple Receptor by Helicase 11 via Bioicons is licensed under CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/).",
+        "x": 300,
+        "y": 232,
+        "w": 76,
+        "h": 190
+      },
+      {
+        "type": "asset",
+        "title": "EGF ligand",
+        "assetUrl": "https://smart.servier.com/wp-content/uploads/2016/10/protein_01.png",
+        "sourceLabel": "Servier Original",
+        "citation": "Image provided by Servier Medical Art (https://smart.servier.com/), licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).",
+        "x": 470,
+        "y": 232,
+        "w": 124,
+        "h": 96
+      },
+      {
+        "type": "asset",
+        "title": "Nucleus",
+        "assetUrl": "https://raw.githubusercontent.com/duerrsimon/bioicons/main/static/icons/cc-by-3.0/Intracellular_components/Servier/nucleus.svg",
+        "sourceLabel": "Servier via Bioicons",
+        "citation": "Nucleus by Servier via Bioicons is licensed under CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/).",
+        "x": 178,
+        "y": 288,
+        "w": 140,
+        "h": 140
+      },
+      {
+        "type": "asset",
+        "title": "DNA Symbolic Extending",
+        "assetUrl": "https://raw.githubusercontent.com/duerrsimon/bioicons/main/static/icons/cc-0/Genetics/David-Eccles--gringer-/DNA_symbolic_extending.svg",
+        "sourceLabel": "Bioicons",
+        "citation": "DNA Symbolic Extending by David-Eccles--gringer- via Bioicons is licensed under CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/).",
+        "x": 270,
+        "y": 286,
+        "w": 136,
+        "h": 148
+      },
+      {
+        "type": "shape",
+        "shape": "card",
+        "text": "EGF binds EGFR",
+        "fill": "#d8f0ee",
+        "stroke": "#0f766e",
+        "color": "#12232e",
+        "x": 436,
+        "y": 166,
+        "w": 190,
+        "h": 60
+      },
+      {
+        "type": "shape",
+        "shape": "card",
+        "text": "RAS -> RAF -> MEK",
+        "fill": "#eef5df",
+        "stroke": "#90a85f",
+        "color": "#12232e",
+        "x": 680,
+        "y": 214,
+        "w": 216,
+        "h": 60
+      },
+      {
+        "type": "shape",
+        "shape": "card",
+        "text": "ERK phosphorylation",
+        "fill": "#d8f0ee",
+        "stroke": "#0f766e",
+        "color": "#12232e",
+        "x": 680,
+        "y": 320,
+        "w": 216,
+        "h": 60
+      },
+      {
+        "type": "shape",
+        "shape": "card",
+        "text": "Nuclear entry",
+        "fill": "#fde1d6",
+        "stroke": "#ea8060",
+        "color": "#12232e",
+        "x": 944,
+        "y": 260,
+        "w": 184,
+        "h": 60
+      },
+      {
+        "type": "shape",
+        "shape": "card",
+        "text": "MYC / CCND1 induction",
+        "fill": "#f7ead6",
+        "stroke": "#b9853e",
+        "color": "#12232e",
+        "x": 1168,
+        "y": 260,
+        "w": 184,
+        "h": 60
+      },
+      {
+        "type": "text",
+        "text": "Membrane receptor",
+        "x": 274,
+        "y": 436,
+        "w": 138,
+        "fontSize": 14,
+        "fontWeight": 700,
+        "color": "#3f5561"
+      },
+      {
+        "type": "text",
+        "text": "Immediate-early transcription",
+        "x": 176,
+        "y": 448,
+        "w": 220,
+        "fontSize": 14,
+        "fontWeight": 700,
+        "color": "#3f5561"
+      },
+      {
+        "type": "text",
+        "text": "Editing exercise: relabel the output card for your own gene set, then add a second receptor or drug inhibitor above the membrane.",
+        "x": 94,
+        "y": 612,
+        "w": 760,
+        "fontSize": 16,
+        "fontWeight": 500,
+        "color": "#4d5d68"
+      },
+      {
+        "type": "shape",
+        "shape": "card",
+        "text": "Proliferation bias",
+        "fill": "#fde1d6",
+        "stroke": "#ea8060",
+        "color": "#12232e",
+        "x": 1086,
+        "y": 406,
+        "w": 198,
+        "h": 60
+      },
+      {
+        "type": "shape",
+        "shape": "card",
+        "text": "Adaptive resistance notes",
+        "fill": "#f2efe8",
+        "stroke": "#b7a999",
+        "color": "#12232e",
+        "x": 860,
+        "y": 520,
+        "w": 258,
+        "h": 60
+      }
+    ],
+    "connectors": [
+      {
+        "from": {
+          "x": 594,
+          "y": 264
+        },
+        "to": {
+          "x": 678,
+          "y": 244
+        },
+        "stroke": "#0f766e",
+        "strokeWidth": 4
+      },
+      {
+        "from": {
+          "x": 896,
+          "y": 244
+        },
+        "to": {
+          "x": 944,
+          "y": 290
+        },
+        "stroke": "#90a85f",
+        "strokeWidth": 4
+      },
+      {
+        "from": {
+          "x": 1128,
+          "y": 290
+        },
+        "to": {
+          "x": 1168,
+          "y": 290
+        },
+        "stroke": "#ea8060",
+        "strokeWidth": 4
+      },
+      {
+        "from": {
+          "x": 1040,
+          "y": 320
+        },
+        "to": {
+          "x": 1040,
+          "y": 404
+        },
+        "stroke": "#ea8060",
+        "strokeWidth": 4
+      },
+      {
+        "from": {
+          "x": 790,
+          "y": 350
+        },
+        "to": {
+          "x": 320,
+          "y": 352
+        },
+        "stroke": "#0f766e",
+        "strokeWidth": 4
+      }
+    ]
+  }
+}

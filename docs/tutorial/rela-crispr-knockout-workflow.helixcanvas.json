@@ -1,0 +1,293 @@
+{
+  "format": "helixcanvas-project",
+  "version": 1,
+  "exportedAt": "2026-04-22T02:52:33.556Z",
+  "project": {
+    "name": "RELA CRISPR knockout workflow",
+    "brief": "CRISPR perturbation workflow for testing NF-kappaB pathway suppression after TNF-alpha stimulation in macrophages.",
+    "board": {
+      "width": 1400,
+      "height": 900,
+      "background": "#f8f5ef"
+    },
+    "palette": {
+      "background": "#f8f5ef",
+      "accent": "#155e75",
+      "accentSoft": "#d2edf5",
+      "ink": "#1f2933",
+      "coral": "#e76f51",
+      "olive": "#7a8f3d"
+    },
+    "nodes": [
+      {
+        "type": "text",
+        "text": "RELA CRISPR knockout workflow",
+        "x": 94,
+        "y": 62,
+        "w": 480,
+        "fontSize": 34,
+        "fontWeight": 700,
+        "color": "#1f2933"
+      },
+      {
+        "type": "text",
+        "text": "Real biological problem: test whether RELA loss dampens TNF-alpha-driven NF-kappaB activation in macrophages.",
+        "x": 94,
+        "y": 92,
+        "w": 760,
+        "fontSize": 16,
+        "fontWeight": 500,
+        "color": "#4d5d68"
+      },
+      {
+        "type": "shape",
+        "shape": "card",
+        "text": "1. Design sgRNA",
+        "fill": "#d2edf5",
+        "stroke": "#155e75",
+        "color": "#1f2933",
+        "x": 92,
+        "y": 176,
+        "w": 210,
+        "h": 70
+      },
+      {
+        "type": "shape",
+        "shape": "card",
+        "text": "2. Deliver Cas9 + select",
+        "fill": "#edf4de",
+        "stroke": "#7a8f3d",
+        "color": "#1f2933",
+        "x": 372,
+        "y": 176,
+        "w": 232,
+        "h": 70
+      },
+      {
+        "type": "shape",
+        "shape": "card",
+        "text": "3. Stimulate with TNF-alpha",
+        "fill": "#fae0d7",
+        "stroke": "#e76f51",
+        "color": "#1f2933",
+        "x": 684,
+        "y": 176,
+        "w": 244,
+        "h": 70
+      },
+      {
+        "type": "shape",
+        "shape": "card",
+        "text": "4. Quantify pathway output",
+        "fill": "#efe7ff",
+        "stroke": "#7c6eb0",
+        "color": "#1f2933",
+        "x": 1004,
+        "y": 176,
+        "w": 256,
+        "h": 70
+      },
+      {
+        "type": "asset",
+        "title": "DNA Symbolic Extending",
+        "assetUrl": "https://raw.githubusercontent.com/duerrsimon/bioicons/main/static/icons/cc-0/Genetics/David-Eccles--gringer-/DNA_symbolic_extending.svg",
+        "sourceLabel": "Bioicons",
+        "citation": "DNA Symbolic Extending by David-Eccles--gringer- via Bioicons is licensed under CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/).",
+        "x": 110,
+        "y": 312,
+        "w": 160,
+        "h": 152
+      },
+      {
+        "type": "asset",
+        "title": "CRISPR Cas9",
+        "assetUrl": "https://raw.githubusercontent.com/duerrsimon/bioicons/main/static/icons/cc-0/Genetics/Marcel_Tisch/CRISPR_Cas9.svg",
+        "sourceLabel": "Bioicons",
+        "citation": "CRISPR Cas9 by Marcel Tisch via Bioicons is licensed under CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/).",
+        "x": 338,
+        "y": 338,
+        "w": 220,
+        "h": 132
+      },
+      {
+        "type": "asset",
+        "title": "Macrophage",
+        "assetUrl": "https://raw.githubusercontent.com/duerrsimon/bioicons/main/static/icons/cc-by-3.0/Blood_Immunology/Servier/macrophage.svg",
+        "sourceLabel": "Servier via Bioicons",
+        "citation": "Macrophage by Servier via Bioicons is licensed under CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/).",
+        "x": 622,
+        "y": 298,
+        "w": 178,
+        "h": 178
+      },
+      {
+        "type": "asset",
+        "title": "Western Blotting",
+        "assetUrl": "https://raw.githubusercontent.com/duerrsimon/bioicons/main/static/icons/cc-by-4.0/General_items/Pooja/western_blotting.svg",
+        "sourceLabel": "Bioicons",
+        "citation": "Western Blotting by Pooja via Bioicons is licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).",
+        "x": 980,
+        "y": 320,
+        "w": 180,
+        "h": 140
+      },
+      {
+        "type": "asset",
+        "title": "Confocal Scanning Laser Microscope CSLM",
+        "assetUrl": "https://raw.githubusercontent.com/duerrsimon/bioicons/main/static/icons/cc-by-4.0/Lab_apparatus/DBCLS/confocal-scanning-laser-microscope-CSLM.svg",
+        "sourceLabel": "Bioicons",
+        "citation": "Confocal Scanning Laser Microscope CSLM by DBCLS via Bioicons is licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).",
+        "x": 1168,
+        "y": 276,
+        "w": 166,
+        "h": 220
+      },
+      {
+        "type": "text",
+        "text": "Target RELA exon",
+        "x": 128,
+        "y": 480,
+        "w": 124,
+        "fontSize": 14,
+        "fontWeight": 700,
+        "color": "#415361"
+      },
+      {
+        "type": "text",
+        "text": "Lentiviral delivery or ribonucleoprotein",
+        "x": 314,
+        "y": 490,
+        "w": 260,
+        "fontSize": 14,
+        "fontWeight": 700,
+        "color": "#415361"
+      },
+      {
+        "type": "text",
+        "text": "TNF-alpha 10 ng/mL for 4 h",
+        "x": 624,
+        "y": 492,
+        "w": 194,
+        "fontSize": 14,
+        "fontWeight": 700,
+        "color": "#415361"
+      },
+      {
+        "type": "text",
+        "text": "p65 / IKBalpha immunoblot",
+        "x": 966,
+        "y": 476,
+        "w": 190,
+        "fontSize": 14,
+        "fontWeight": 700,
+        "color": "#415361"
+      },
+      {
+        "type": "text",
+        "text": "Nuclear localization imaging",
+        "x": 1142,
+        "y": 514,
+        "w": 194,
+        "fontSize": 14,
+        "fontWeight": 700,
+        "color": "#415361"
+      },
+      {
+        "type": "shape",
+        "shape": "card",
+        "text": "Expected result: reduced phospho-p65 and IL6",
+        "fill": "#dff1eb",
+        "stroke": "#159570",
+        "color": "#1f2933",
+        "x": 870,
+        "y": 604,
+        "w": 356,
+        "h": 62
+      },
+      {
+        "type": "text",
+        "text": "Editing exercise: duplicate the last card to add qPCR, ELISA, or single-cell RNA-seq as a fifth readout.",
+        "x": 94,
+        "y": 742,
+        "w": 760,
+        "fontSize": 16,
+        "fontWeight": 500,
+        "color": "#4d5d68"
+      }
+    ],
+    "connectors": [
+      {
+        "from": {
+          "x": 302,
+          "y": 212
+        },
+        "to": {
+          "x": 372,
+          "y": 212
+        },
+        "stroke": "#155e75",
+        "strokeWidth": 4
+      },
+      {
+        "from": {
+          "x": 604,
+          "y": 212
+        },
+        "to": {
+          "x": 684,
+          "y": 212
+        },
+        "stroke": "#7a8f3d",
+        "strokeWidth": 4
+      },
+      {
+        "from": {
+          "x": 928,
+          "y": 212
+        },
+        "to": {
+          "x": 1004,
+          "y": 212
+        },
+        "stroke": "#e76f51",
+        "strokeWidth": 4
+      },
+      {
+        "from": {
+          "x": 474,
+          "y": 404
+        },
+        "to": {
+          "x": 622,
+          "y": 392
+        },
+        "stroke": "#7a8f3d",
+        "strokeWidth": 4
+      },
+      {
+        "from": {
+          "x": 800,
+          "y": 390
+        },
+        "to": {
+          "x": 980,
+          "y": 390
+        },
+        "stroke": "#e76f51",
+        "strokeWidth": 4
+      },
+      {
+        "from": {
+          "x": 1160,
+          "y": 390
+        },
+        "to": {
+          "x": 1168,
+          "y": 390
+        },
+        "stroke": "#7c6eb0",
+        "strokeWidth": 4
+      }
+    ]
+  }
+}

@@ -152,7 +152,12 @@ flowchart LR
 ### Asset pipeline
 
 - generated Bioicons manifest built from a local Bioicons clone
+- cached-manifest fallback so contributors can still regenerate pack outputs without a fresh Bioicons checkout
+- versioned built-in pack manifest in `public/data/library.packs.json`
+- first-class committed pack files under `packs/` for curated built-ins and examples
 - asset metadata preserved in `public/data/bioicons.library.json`
+- pack schema, validation, and flattening logic in `src/lib/assetPacks.js`
+- pack validation CLI in `scripts/validate-asset-pack.mjs`
 - Servier policy and kit metadata defined in source data files
 
 ## Why This Architecture Is Meaningful
@@ -198,7 +203,7 @@ The current asset suggestion layer is keyword-based on the client. A future vers
 
 ### Open-source maintainability
 
-The project still needs stronger contributor workflows, asset-pack conventions, and clearer public documentation to become durable as a community tool.
+The project now has a first-class built-in pack format, but it still needs a contributor-facing pack authoring guide, more validation tooling, and a cleaner path for third-party community packs.
 
 ## Near-Term Roadmap
 

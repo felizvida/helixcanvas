@@ -1,0 +1,241 @@
+{
+  "format": "helixcanvas-project",
+  "version": 1,
+  "exportedAt": "2026-04-22T02:52:33.558Z",
+  "project": {
+    "name": "Complement deposition in retinal degeneration",
+    "brief": "Retinal degeneration figure connecting tissue-level anatomy, photoreceptor stress, complement tagging, and phagocyte recruitment.",
+    "board": {
+      "width": 1400,
+      "height": 900,
+      "background": "#f6f1eb"
+    },
+    "palette": {
+      "background": "#f6f1eb",
+      "accent": "#0e7490",
+      "accentSoft": "#d6edf2",
+      "ink": "#16212c",
+      "coral": "#e07a5f",
+      "olive": "#9ab87a"
+    },
+    "nodes": [
+      {
+        "type": "text",
+        "text": "Complement deposition in retinal degeneration",
+        "x": 94,
+        "y": 62,
+        "w": 620,
+        "fontSize": 34,
+        "fontWeight": 700,
+        "color": "#16212c"
+      },
+      {
+        "type": "text",
+        "text": "Real biological problem: connect local tissue anatomy to photoreceptor stress, complement tagging, and inflammatory cell recruitment.",
+        "x": 94,
+        "y": 92,
+        "w": 780,
+        "fontSize": 16,
+        "fontWeight": 500,
+        "color": "#4d5d68"
+      },
+      {
+        "type": "asset",
+        "title": "Retina",
+        "assetUrl": "https://raw.githubusercontent.com/duerrsimon/bioicons/main/static/icons/cc-by-3.0/Human_physiology/Servier/retina.svg",
+        "sourceLabel": "Servier via Bioicons",
+        "citation": "Retina by Servier via Bioicons is licensed under CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/).",
+        "x": 84,
+        "y": 168,
+        "w": 360,
+        "h": 470
+      },
+      {
+        "type": "asset",
+        "title": "Retina Cell",
+        "assetUrl": "https://raw.githubusercontent.com/duerrsimon/bioicons/main/static/icons/cc-by-3.0/Human_physiology/Servier/retina-cell.svg",
+        "sourceLabel": "Servier via Bioicons",
+        "citation": "Retina Cell by Servier via Bioicons is licensed under CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/).",
+        "x": 530,
+        "y": 226,
+        "w": 144,
+        "h": 188
+      },
+      {
+        "type": "asset",
+        "title": "Antibody",
+        "assetUrl": "https://raw.githubusercontent.com/duerrsimon/bioicons/main/static/icons/cc-by-3.0/Blood_Immunology/Servier/antibody.svg",
+        "sourceLabel": "Servier via Bioicons",
+        "citation": "Antibody by Servier via Bioicons is licensed under CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/).",
+        "x": 736,
+        "y": 238,
+        "w": 124,
+        "h": 160
+      },
+      {
+        "type": "asset",
+        "title": "Macrophage",
+        "assetUrl": "https://raw.githubusercontent.com/duerrsimon/bioicons/main/static/icons/cc-by-3.0/Blood_Immunology/Servier/macrophage.svg",
+        "sourceLabel": "Servier via Bioicons",
+        "citation": "Macrophage by Servier via Bioicons is licensed under CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/).",
+        "x": 946,
+        "y": 360,
+        "w": 194,
+        "h": 194
+      },
+      {
+        "type": "asset",
+        "title": "Neuron",
+        "assetUrl": "https://raw.githubusercontent.com/duerrsimon/bioicons/main/static/icons/cc-by-4.0/Cell_culture/DBCLS/neuron.svg",
+        "sourceLabel": "Bioicons",
+        "citation": "Neuron by DBCLS via Bioicons is licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).",
+        "x": 1160,
+        "y": 232,
+        "w": 134,
+        "h": 176
+      },
+      {
+        "type": "shape",
+        "shape": "card",
+        "text": "Photoreceptor stress",
+        "fill": "#d6edf2",
+        "stroke": "#0e7490",
+        "color": "#16212c",
+        "x": 496,
+        "y": 170,
+        "w": 214,
+        "h": 60
+      },
+      {
+        "type": "shape",
+        "shape": "card",
+        "text": "Complement tagging",
+        "fill": "#fce0d9",
+        "stroke": "#e07a5f",
+        "color": "#16212c",
+        "x": 716,
+        "y": 170,
+        "w": 214,
+        "h": 60
+      },
+      {
+        "type": "shape",
+        "shape": "card",
+        "text": "Phagocyte recruitment",
+        "fill": "#edf4de",
+        "stroke": "#9ab87a",
+        "color": "#16212c",
+        "x": 940,
+        "y": 286,
+        "w": 226,
+        "h": 60
+      },
+      {
+        "type": "shape",
+        "shape": "card",
+        "text": "Synaptic dysfunction",
+        "fill": "#f5ead7",
+        "stroke": "#bf8d45",
+        "color": "#16212c",
+        "x": 1140,
+        "y": 170,
+        "w": 190,
+        "h": 60
+      },
+      {
+        "type": "shape",
+        "shape": "card",
+        "text": "Retinal thinning over time",
+        "fill": "#f4efe8",
+        "stroke": "#b5a79a",
+        "color": "#16212c",
+        "x": 1040,
+        "y": 596,
+        "w": 240,
+        "h": 60
+      },
+      {
+        "type": "text",
+        "text": "Lamina and lesion overview",
+        "x": 160,
+        "y": 654,
+        "w": 206,
+        "fontSize": 14,
+        "fontWeight": 700,
+        "color": "#4d5d68"
+      },
+      {
+        "type": "text",
+        "text": "Editing exercise: replace the antibody asset with cytokine or microglia-specific icons if your story is inflammation-first instead of complement-first.",
+        "x": 94,
+        "y": 742,
+        "w": 820,
+        "fontSize": 16,
+        "fontWeight": 500,
+        "color": "#4d5d68"
+      }
+    ],
+    "connectors": [
+      {
+        "from": {
+          "x": 444,
+          "y": 360
+        },
+        "to": {
+          "x": 530,
+          "y": 320
+        },
+        "stroke": "#0e7490",
+        "strokeWidth": 4
+      },
+      {
+        "from": {
+          "x": 674,
+          "y": 318
+        },
+        "to": {
+          "x": 736,
+          "y": 318
+        },
+        "stroke": "#e07a5f",
+        "strokeWidth": 4
+      },
+      {
+        "from": {
+          "x": 860,
+          "y": 318
+        },
+        "to": {
+          "x": 946,
+          "y": 402
+        },
+        "stroke": "#9ab87a",
+        "strokeWidth": 4
+      },
+      {
+        "from": {
+          "x": 1140,
+          "y": 408
+        },
+        "to": {
+          "x": 1160,
+          "y": 318
+        },
+        "stroke": "#bf8d45",
+        "strokeWidth": 4
+      },
+      {
+        "from": {
+          "x": 1040,
+          "y": 626
+        },
+        "to": {
+          "x": 430,
+          "y": 626
+        },
+        "stroke": "#b5a79a",
+        "strokeWidth": 4
+      }
+    ]
+  }
+}

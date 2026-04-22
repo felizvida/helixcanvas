@@ -1,6 +1,6 @@
 {
   "name": "helixcanvas",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "An open-source, local-first biomedical illustration studio that unifies Bioicons, Servier Medical Art, and user-owned figure imports in a publication-focused editor.",
   "keywords": [
@@ -28,10 +28,12 @@
     "api:dev": "node server/index.mjs",
     "start": "node server/index.mjs",
     "test": "node --test",
+    "check:packs": "node scripts/validate-asset-pack.mjs packs",
     "build": "vite build",
+    "build:tutorial": "node scripts/generate-tutorial-assets.mjs",
     "preview": "vite preview",
     "build:library": "node scripts/generate-bioicons-index.mjs",
-    "check": "npm run test && npm run build"
+    "check": "npm run check:packs && npm run test && npm run build"
   },
   "dependencies": {
     "concurrently": "^9.2.1",

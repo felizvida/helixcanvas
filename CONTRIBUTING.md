@@ -41,6 +41,13 @@ npm run dev
 npm run check
 ```
 
+4. If you are changing anything under `packs/` or `public/packs/`, also run:
+
+```bash
+npm run check:packs
+npm run build:library
+```
+
 If you want AI features locally, configure `OPENAI_API_KEY` using [.env.example](./.env.example). The editor should still work without it.
 
 ## Working Agreement
@@ -69,6 +76,9 @@ Asset-related contributions need extra care.
 - Keep attribution metadata attached to the asset manifest.
 - Prefer adding new sources as structured packs instead of mixing raw files into the app ad hoc.
 - If a source has unclear redistribution rights, open an issue first instead of submitting a direct asset PR.
+- Follow [docs/ASSET_PACK_SPEC.md](./docs/ASSET_PACK_SPEC.md) for pack shape, validation rules, and local asset conventions.
+- Put committed pack files under `packs/` and any bundled local assets under `public/packs/<pack-id>/`.
+- Make sure `npm run build:library` produces clean generated outputs before opening a PR.
 
 ## Issues
 

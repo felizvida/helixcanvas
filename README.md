@@ -39,8 +39,10 @@ The long-term ambition is closer to an Inkscape-for-biomedical-figures than a co
 ## Current Capabilities
 
 - Unified in-app library for Bioicons assets with preserved licensing metadata
+- Versioned built-in asset packs with pack-level provenance, license strategy, and validation status
 - Servier-authored vector subset surfaced through Bioicons
 - Official Servier Medical Art raster examples and PPTX kit links
+- Real-world example projects for signaling, CRISPR workflow, and retinal pathology tutorials
 - Drag-and-drop canvas with undo/redo, keyboard nudging, snap-to-grid, layering, resizing, and export
 - Local project open/save flows with recovery drafts for destructive actions
 - Asset curation features including saved assets, recent assets, and relevance-aware library sorting
@@ -66,6 +68,13 @@ This keeps AI useful without making the editor opaque, costly by default, or req
 
 Bioicons is the main searchable vector library. Asset-level source and license metadata are preserved in the generated manifest.
 
+HelixCanvas now wraps built-in sources in a versioned pack manifest so the app can show:
+
+- which packs are installed
+- how each pack handles licensing and attribution
+- whether a pack passed local manifest validation
+- a stable structure for future community-contributed packs
+
 ### Servier Medical Art
 
 Servier is surfaced in two ways:
@@ -81,6 +90,8 @@ FigureLabs is intentionally treated as a **user-owned import lane**. HelixCanvas
 
 - [Open-source roadmap](./docs/OSS_ROADMAP.md)
 - [Product overview](./docs/PRODUCT_OVERVIEW.md)
+- [Asset pack spec](./docs/ASSET_PACK_SPEC.md)
+- [Real biology tutorial](./docs/tutorial/README.md)
 - [Contributing guide](./CONTRIBUTING.md)
 - [Code of conduct](./CODE_OF_CONDUCT.md)
 
@@ -95,8 +106,10 @@ git clone --depth 1 https://github.com/duerrsimon/bioicons /tmp/bioicons
 2. Build the local Bioicons manifest:
 
 ```bash
-BIOICONS_DIR=/tmp/bioicons npm run build:library
+npm run build:library
 ```
+
+If you have a local Bioicons checkout, point the script at it with `BIOICONS_DIR=/path/to/bioicons`. If not, the script will reuse the checked-in Bioicons cache and still regenerate the pack manifest.
 
 3. Install dependencies:
 
@@ -126,6 +139,14 @@ Run the local verification suite with:
 npm run check
 ```
 
+Asset-pack contributors should also know:
+
+```bash
+npm run check:packs
+npm run build:tutorial
+npm run build:library
+```
+
 GitHub Actions runs the same checks on pushes to `main` and on pull requests through [`.github/workflows/ci.yml`](./.github/workflows/ci.yml).
 
 ## Project Structure
@@ -133,6 +154,7 @@ GitHub Actions runs the same checks on pushes to `main` and on pull requests thr
 - `src/App.jsx` — main editor experience
 - `src/lib/ai.js` — browser client for local AI endpoints
 - `src/lib/assets.js` — asset ranking, recents, favorites, and suggestion helpers
+- `src/lib/assetPacks.js` — pack schema, normalization, validation, and summary helpers
 - `src/lib/projectFiles.js` — local project file helpers and validation
 - `src/lib/history.js` — project history helpers
 - `src/data/templates.js` — starter layouts and design presets
@@ -140,7 +162,11 @@ GitHub Actions runs the same checks on pushes to `main` and on pull requests thr
 - `src/lib/exporters.js` — SVG, JSON, and attribution export helpers
 - `server/index.mjs` — local API server and production host
 - `server/aiService.mjs` — OpenAI orchestration and structured output contracts
+- `packs/` — first-class committed asset pack files for built-ins and examples
+- `public/packs/` — local assets referenced by committed pack files
+- `scripts/validate-asset-pack.mjs` — pack validation CLI used locally and in CI
 - `scripts/generate-bioicons-index.mjs` — Bioicons indexing pipeline
+- `public/data/library.packs.json` — generated built-in asset pack manifest
 - `public/data/bioicons.library.json` — generated searchable asset manifest
 
 ## Community
@@ -168,3 +194,4 @@ If you want to help, good contribution areas include:
 - Servier Medical Art content requires attribution and is surfaced with compliance guidance.
 - AI suggestions are intentionally **source-aware** and designed to support, not override, editorial control.
 - HelixCanvas is being developed as an open-source public-good tool, not as a commercial SaaS product.
+- The repository is released under the [Apache-2.0 license](./LICENSE).

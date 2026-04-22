@@ -38,6 +38,7 @@ export function getAssetMatchScore(asset, suggestion) {
     asset.categoryLabel,
     asset.sourceLabel,
     asset.originLabel,
+    asset.packTitle,
   ]
     .filter(Boolean)
     .join(" ")

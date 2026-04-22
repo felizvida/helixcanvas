@@ -1,7 +1,16 @@
 import { startTransition, useDeferredValue, useEffect, useRef, useState } from "react";
-import { SERVIER_KITS, SERVIER_ORIGINALS, SOURCE_POLICIES } from "./data/servier.js";
+import { SERVIER_ATTRIBUTION, SERVIER_KITS, SERVIER_LICENSE, SERVIER_ORIGINALS, SOURCE_POLICIES } from "./data/servier.js";
+import { EXAMPLE_PROJECTS } from "./data/exampleProjects.js";
 import { TEMPLATES } from "./data/templates.js";
 import { fetchAiHealth, requestFigureCritique, requestFigurePlan } from "./lib/ai.js";
+import {
+  createBioiconsCommunityPack,
+  createServierOriginalPack,
+  describePackLicenseStrategy,
+  flattenAssetPacks,
+  parseLibraryPackManifest,
+  summarizeLibraryPacks,
+} from "./lib/assetPacks.js";
 import {
   buildAiSuggestions,
   isDuplicateImportedAsset,
@@ -34,6 +43,7 @@ const STORAGE_KEYS = {
 const SOURCE_FILTERS = [
   { id: "all", label: "All sources" },
   { id: "bioicons", label: "Bioicons" },
+  { id: "community", label: "Community packs" },
   { id: "servier-vector", label: "Servier vectors" },
   { id: "servier-original", label: "Servier originals" },
   { id: "figurelabs-import", label: "FigureLabs imports" },
@@ -58,7 +68,7 @@ const HERO_KPIS = [
   { label: "Open assets", value: "2.8K+" },
   { label: "Servier vectors", value: "1.3K+" },
   { label: "Official PPT kits", value: "50" },
-  { label: "AI copilots", value: "Plan + critique" },
+  { label: "Guided examples", value: `${EXAMPLE_PROJECTS.length}` },
 ];
 
 function createId(prefix) {
@@ -191,6 +201,17 @@ function summarizeCounts(items) {
   };
 }
 
+function createBuiltInPacksFromLegacyLibrary(items) {
+  return [
+    createBioiconsCommunityPack(items),
+    createServierOriginalPack(SERVIER_ORIGINALS, {
+      licenseLabel: SERVIER_LICENSE.label,
+      licenseUrl: SERVIER_LICENSE.url,
+      defaultCitation: SERVIER_ATTRIBUTION,
+    }),
+  ];
+}
+
 function getHandleDistance(from, to) {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
@@ -215,10 +236,15 @@ function makeAssetNode(asset, position = { x: 160, y: 180 }) {
     type: "asset",
     title: asset.title,
     assetUrl: asset.assetUrl,
+    previewUrl: asset.previewUrl,
+    sourceBucket: asset.sourceBucket,
     sourceLabel: asset.sourceLabel,
+    originLabel: asset.originLabel,
     citation: asset.citation,
     sourcePage: asset.sourcePage,
     licenseLabel: asset.licenseLabel,
+    packId: asset.packId,
+    packTitle: asset.packTitle,
     assetType: asset.assetType,
     x: position.x,
     y: position.y,
@@ -460,6 +486,7 @@ function AssetCard({
   onAdd,
   active,
   onSelectSource,
+  onSelectPack,
   onToggleFavorite,
   favorite,
   used,
@@ -483,6 +510,7 @@ function AssetCard({
         <p>{asset.categoryLabel}</p>
         <div className="asset-card__meta">
           <span>{asset.licenseLabel}</span>
+          {asset.packTitle ? <span>{asset.packTitle}</span> : null}
           {asset.originLabel ? <span>{asset.originLabel}</span> : null}
           {used ? <span>On canvas</span> : null}
         </div>
@@ -494,6 +522,11 @@ function AssetCard({
         <button className="ghost-button" type="button" onClick={() => onToggleFavorite(asset.id)}>
           {favorite ? "Unsave" : "Save"}
         </button>
+        {asset.packId ? (
+          <button className="ghost-button" type="button" onClick={() => onSelectPack(asset.packId)}>
+            Pack
+          </button>
+        ) : null}
         {asset.sourcePage ? (
           <button
             className="ghost-button"
@@ -503,6 +536,71 @@ function AssetCard({
             Source
           </button>
         ) : null}
+      </div>
+    </article>
+  );
+}
+
+function PackCard({ pack, active, onFocusPack }) {
+  return (
+    <article className={`pack-card ${active ? "is-active" : ""}`}>
+      <div className="pack-card__head">
+        <div>
+          <h4>{pack.title}</h4>
+          <p>{pack.description}</p>
+        </div>
+        <span className={`pack-status pack-status--${pack.status}`}>{pack.status}</span>
+      </div>
+      <div className="pack-card__meta">
+        <span>{pack.assetCount} assets</span>
+        <span>{pack.categoriesCount} categories</span>
+        <span>{describePackLicenseStrategy(pack)}</span>
+      </div>
+      <div className="ai-pill-row">
+        {pack.tags.map((tag) => (
+          <span key={tag} className="ai-pill">
+            {tag}
+          </span>
+        ))}
+      </div>
+      <div className="pack-card__actions">
+        <button type="button" className="secondary-button" onClick={() => onFocusPack(active ? "all" : pack.id)}>
+          {active ? "Show all" : "Focus pack"}
+        </button>
+        {pack.homepage ? (
+          <button type="button" className="ghost-button" onClick={() => openExternalLink(pack.homepage)}>
+            Homepage
+          </button>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function ExampleProjectCard({ example, onLoad, onUseBrief }) {
+  return (
+    <article className="example-card">
+      <div className="example-card__head">
+        <div>
+          <h4>{example.title}</h4>
+          <p>{example.problem}</p>
+        </div>
+      </div>
+      <div className="ai-pill-row">
+        {example.tags.map((tag) => (
+          <span key={tag} className="ai-pill">
+            {tag}
+          </span>
+        ))}
+      </div>
+      <p className="helper-copy">{example.summary}</p>
+      <div className="example-card__actions">
+        <button type="button" className="secondary-button" onClick={() => onLoad(example)}>
+          Load figure
+        </button>
+        <button type="button" className="ghost-button" onClick={() => onUseBrief(example)}>
+          Use brief
+        </button>
       </div>
     </article>
   );
@@ -575,11 +673,16 @@ function PolicyCard({ policy }) {
 
 function App() {
   const [libraryStatus, setLibraryStatus] = useState("loading");
+  const [libraryPacks, setLibraryPacks] = useState([]);
   const [library, setLibrary] = useState([]);
   const [libraryStats, setLibraryStats] = useState({
+    packCount: 0,
+    readyPackCount: 0,
     totalAssets: 0,
     bioiconsAssets: 0,
     servierVectorAssets: 0,
+    servierOriginalAssets: 0,
+    categories: 0,
   });
   const [project, setProject] = useState(() =>
     typeof window === "undefined"
@@ -600,6 +703,7 @@ function App() {
   const [selection, setSelection] = useState(null);
   const [libraryQuery, setLibraryQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState("all");
+  const [packFilter, setPackFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [sortMode, setSortMode] = useState("relevance");
   const [brief, setBrief] = useState("");
@@ -640,18 +744,78 @@ function App() {
   const deferredQuery = useDeferredValue(libraryQuery.trim().toLowerCase());
 
   useEffect(() => {
-    Promise.all([
-      fetch("/data/bioicons.library.json").then((response) => response.json()),
-      fetch("/data/bioicons.stats.json").then((response) => response.json()),
-    ])
-      .then(([items, stats]) => {
-        setLibrary(items);
-        setLibraryStats(stats);
+    async function loadLibrary() {
+      try {
+        const response = await fetch("/data/library.packs.json");
+
+        if (!response.ok) {
+          throw new Error("Pack manifest unavailable.");
+        }
+
+        const payload = await response.json();
+        const packs = parseLibraryPackManifest(payload);
+
+        if (!packs.length) {
+          throw new Error("Pack manifest is empty.");
+        }
+
+        setLibraryPacks(packs);
+        setLibrary(flattenAssetPacks(packs));
+        setLibraryStats(summarizeLibraryPacks(packs));
         setLibraryStatus("ready");
-      })
-      .catch(() => {
+        return;
+      } catch {}
+
+      try {
+        const [items] = await Promise.all([
+          fetch("/data/bioicons.library.json").then((response) => {
+            if (!response.ok) {
+              throw new Error("Legacy library unavailable.");
+            }
+
+            return response.json();
+          }),
+        ]);
+
+        const packs = createBuiltInPacksFromLegacyLibrary(items);
+        setLibraryPacks(packs);
+        setLibrary(flattenAssetPacks(packs));
+        setLibraryStats(summarizeLibraryPacks(packs));
+        setLibraryStatus("ready");
+      } catch {
         setLibraryStatus("error");
-      });
+      }
+    }
+
+    loadLibrary();
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const searchParams = new URLSearchParams(window.location.search);
+    const exampleId = searchParams.get("example");
+    const focus = searchParams.get("focus");
+
+    if (exampleId) {
+      const example = EXAMPLE_PROJECTS.find((item) => item.id === exampleId);
+
+      if (example) {
+        projectFileHandleRef.current = null;
+        replaceProjectWorkspace(example.project, {
+          fileName: `${example.id}.helixcanvas.json`,
+        });
+        setBrief(example.brief);
+      }
+    }
+
+    if (focus === "workspace") {
+      window.setTimeout(() => {
+        window.scrollTo({ top: 420, behavior: "auto" });
+      }, 120);
+    }
   }, []);
 
   useEffect(() => {
@@ -719,7 +883,7 @@ function App() {
   }, [notice]);
 
   useEffect(() => {
-    const unifiedLibrary = [...SERVIER_ORIGINALS, ...importedAssets, ...library];
+    const unifiedLibrary = [...importedAssets, ...library];
 
     if (!aiPlan?.assetQueries?.length) {
       setAiSuggestions([]);
@@ -836,8 +1000,9 @@ function App() {
     };
   }, [dragState, snapToGrid, zoom]);
 
-  const unifiedLibrary = [...SERVIER_ORIGINALS, ...importedAssets, ...library];
+  const unifiedLibrary = [...importedAssets, ...library];
   const totalCounts = summarizeCounts(unifiedLibrary);
+  const packOptions = [{ id: "all", title: "All packs" }, ...libraryPacks];
   const usedAssetIds = [
     ...new Set(
       project.nodes
@@ -852,13 +1017,14 @@ function App() {
   const filteredLibrary = sortLibraryAssets(
     unifiedLibrary.filter((asset) => {
       const matchesSource = sourceFilter === "all" || asset.sourceBucket === sourceFilter;
+      const matchesPack = packFilter === "all" || asset.packId === packFilter;
       const matchesCategory = categoryFilter === "all" || asset.categoryLabel === categoryFilter;
       const matchesQuery =
         !deferredQuery ||
         asset.title.toLowerCase().includes(deferredQuery) ||
         asset.searchText?.includes(deferredQuery);
 
-      return matchesSource && matchesCategory && matchesQuery;
+      return matchesSource && matchesPack && matchesCategory && matchesQuery;
     }),
     {
       sortMode,
@@ -973,6 +1139,21 @@ function App() {
 
   function requestProjectOpen() {
     projectImportInputRef.current?.click();
+  }
+
+  function loadExampleProject(example) {
+    projectFileHandleRef.current = null;
+    replaceProjectWorkspace(example.project, {
+      fileName: `${example.id}.helixcanvas.json`,
+      notice: `Loaded example: ${example.title}`,
+      stageReason: `Loaded example ${example.title}`,
+    });
+    setBrief(example.brief);
+  }
+
+  function useExampleBrief(example) {
+    setBrief(example.brief);
+    setNotice(`Loaded example brief for ${example.title}`);
   }
 
   async function saveProjectFile(options = {}) {
@@ -1404,8 +1585,25 @@ function App() {
   function focusSuggestionSearch(suggestion) {
     setLibraryQuery(suggestion.query);
     setSourceFilter(suggestion.preferredSourceBucket);
+    setPackFilter("all");
     setCategoryFilter("all");
     setNotice(`Focused the library on "${suggestion.query}"`);
+  }
+
+  function focusPack(packId) {
+    setPackFilter(packId);
+    setSourceFilter("all");
+    setCategoryFilter("all");
+    setNotice(packId === "all" ? "Showing every installed pack" : "Focused the library on one pack");
+  }
+
+  function focusSource(sourceBucket) {
+    const sourceLabel =
+      SOURCE_FILTERS.find((filter) => filter.id === sourceBucket)?.label ?? sourceBucket;
+    setSourceFilter(sourceBucket);
+    setPackFilter("all");
+    setCategoryFilter("all");
+    setNotice(`Focused the library on ${sourceLabel}`);
   }
 
   function updateSelectedNode(patch) {
@@ -1637,11 +1835,14 @@ function App() {
 
   const selectedSourcePolicy = selectedNode
     ? describeSourcePolicy(
-        selectedNode.sourceLabel?.toLowerCase().includes("figurelabs")
+        selectedNode.sourceBucket === "figurelabs-import"
           ? "figurelabs"
-          : selectedNode.sourceLabel?.toLowerCase().includes("servier")
+          : selectedNode.sourceBucket === "servier-original" ||
+              selectedNode.sourceBucket === "servier-vector"
             ? "servier"
-            : "bioicons",
+            : selectedNode.sourceBucket === "bioicons"
+              ? "bioicons"
+              : "",
       )
     : null;
 
@@ -1685,6 +1886,13 @@ function App() {
               onClick={() => applyTemplate(TEMPLATES[0])}
             >
               Launch studio
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => loadExampleProject(EXAMPLE_PROJECTS[0])}
+            >
+              Open real example
             </button>
             <button type="button" className="ghost-button" onClick={() => openExternalLink("https://bioicons.com/")}>
               Browse Bioicons
@@ -1763,6 +1971,26 @@ function App() {
               hidden
               onChange={importProjectFromFile}
             />
+          </div>
+
+          <div className="panel">
+            <div className="panel__head">
+              <h3>Real-world examples</h3>
+              <span>{EXAMPLE_PROJECTS.length} guided figures</span>
+            </div>
+            <p className="helper-copy">
+              Start from actual biology problems instead of placeholders. Each example is editable, source-aware, and designed to teach the interface through a realistic figure.
+            </p>
+            <div className="example-list">
+              {EXAMPLE_PROJECTS.map((example) => (
+                <ExampleProjectCard
+                  key={example.id}
+                  example={example}
+                  onLoad={loadExampleProject}
+                  onUseBrief={useExampleBrief}
+                />
+              ))}
+            </div>
           </div>
 
           <div className="panel">
@@ -1890,10 +2118,22 @@ function App() {
               <h3>Source-aware library</h3>
               <span>
                 {libraryStats.totalAssets
-                  ? `${libraryStats.totalAssets} Bioicons vectors indexed`
+                  ? `${libraryStats.totalAssets} built-in assets across ${libraryStats.packCount} packs`
                   : "Loading library"}
               </span>
             </div>
+            {libraryPacks.length ? (
+              <div className="pack-list">
+                {libraryPacks.map((pack) => (
+                  <PackCard
+                    key={pack.id}
+                    pack={pack}
+                    active={packFilter === pack.id}
+                    onFocusPack={focusPack}
+                  />
+                ))}
+              </div>
+            ) : null}
             <input
               className="text-input"
               value={libraryQuery}
@@ -1905,6 +2145,13 @@ function App() {
                 {SOURCE_FILTERS.map((filter) => (
                   <option key={filter.id} value={filter.id}>
                     {filter.label}
+                  </option>
+                ))}
+              </select>
+              <select value={packFilter} onChange={(event) => focusPack(event.target.value)}>
+                {packOptions.map((pack) => (
+                  <option key={pack.id} value={pack.id}>
+                    {pack.title}
                   </option>
                 ))}
               </select>
@@ -1927,6 +2174,9 @@ function App() {
               </select>
             </div>
             <div className="library-summary">
+              <span>{libraryStats.packCount} packs</span>
+              <span>{libraryStats.readyPackCount} validated</span>
+              <span>{libraryStats.categories} categories</span>
               <span>{favoriteAssetIds.length} saved</span>
               <span>{recentAssetIds.length} recent</span>
               <span>{usedAssetIds.length} on canvas</span>
@@ -1934,11 +2184,11 @@ function App() {
             <AssetShelf title="Saved assets" assets={favoriteAssets} onAdd={addAssetToCanvas} />
             <AssetShelf title="Recent assets" assets={recentAssets} onAdd={addAssetToCanvas} />
             <div className="asset-grid">
-              {libraryStatus === "loading" ? <p>Indexing Bioicons...</p> : null}
+              {libraryStatus === "loading" ? <p>Indexing asset packs...</p> : null}
               {libraryStatus === "error" ? (
                 <p>
-                  The local Bioicons index is missing. Run <code>npm run build:library</code> after
-                  cloning Bioicons.
+                  The local library pack manifest is missing. Run <code>npm run build:library</code>{" "}
+                  after cloning Bioicons.
                 </p>
               ) : null}
               {filteredLibrary.slice(0, 80).map((asset) => (
@@ -1947,7 +2197,8 @@ function App() {
                   asset={asset}
                   onAdd={addAssetToCanvas}
                   active={selectedNode?.assetId === asset.id}
-                  onSelectSource={setSourceFilter}
+                  onSelectSource={focusSource}
+                  onSelectPack={focusPack}
                   onToggleFavorite={toggleFavorite}
                   favorite={favoriteAssetIds.includes(asset.id)}
                   used={usedAssetIds.includes(asset.id)}
@@ -2679,16 +2930,20 @@ function App() {
                 <span>Total indexed + imported assets</span>
               </article>
               <article>
+                <strong>{libraryStats.readyPackCount}</strong>
+                <span>Validated built-in packs</span>
+              </article>
+              <article>
                 <strong>{libraryStats.servierVectorAssets}</strong>
                 <span>Servier vectors from Bioicons</span>
               </article>
               <article>
-                <strong>{SERVIER_KITS.length}</strong>
-                <span>Official Servier kits</span>
-              </article>
-              <article>
                 <strong>{totalCounts.figurelabsImports}</strong>
                 <span>User-owned imports</span>
+              </article>
+              <article>
+                <strong>{SERVIER_KITS.length}</strong>
+                <span>Official Servier kits</span>
               </article>
             </div>
             {selectedSourcePolicy ? <PolicyCard policy={selectedSourcePolicy} /> : null}
