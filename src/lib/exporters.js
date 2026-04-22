@@ -1,3 +1,10 @@
+import {
+  buildConnectorArrowHead,
+  buildConnectorGeometry,
+  buildConnectorInhibitionBar,
+} from "./connectors.js";
+import { getFontFamilyStack } from "./figureStyles.js";
+
 const XML_ESCAPES = {
   "&": "&amp;",
   "<": "&lt;",
@@ -54,6 +61,28 @@ function renderShape(node) {
   ].join("");
 }
 
+function renderTextNode(node) {
+  const fontWeight = node.fontWeight ?? 600;
+  const fontSize = node.fontSize ?? 18;
+  const textAlign = node.textAlign ?? "left";
+  const lineHeight = Number(node.lineHeight) || 1.3;
+  const fontFamily = getFontFamilyStack(node.fontFamily);
+  const anchor = textAlign === "center" ? "middle" : textAlign === "right" ? "end" : "start";
+  const x =
+    textAlign === "center" ? node.x + (node.w ?? 0) / 2 : textAlign === "right" ? node.x + (node.w ?? 0) : node.x;
+  const lines = String(node.text ?? "").split("\n");
+
+  return [
+    `<text x="${x}" y="${node.y}" font-size="${fontSize}" font-weight="${fontWeight}" font-family="${escapeXml(
+      fontFamily,
+    )}" text-anchor="${anchor}" fill="${node.color ?? "#12232e"}">`,
+    ...lines.map((line, index) =>
+      `<tspan x="${x}" dy="${index === 0 ? 0 : fontSize * lineHeight}">${escapeXml(line)}</tspan>`,
+    ),
+    `</text>`,
+  ].join("");
+}
+
 function renderNode(node) {
   if (node.type === "asset") {
     return `<image x="${node.x}" y="${node.y}" width="${node.w}" height="${node.h}" href="${escapeXml(
@@ -62,11 +91,7 @@ function renderNode(node) {
   }
 
   if (node.type === "text") {
-    const fontWeight = node.fontWeight ?? 600;
-    const fontSize = node.fontSize ?? 18;
-    return `<text x="${node.x}" y="${node.y}" font-size="${fontSize}" font-weight="${fontWeight}" fill="${node.color ?? "#12232e"}">${escapeXml(
-      node.text,
-    )}</text>`;
+    return renderTextNode(node);
   }
 
   if (node.type === "shape") {
@@ -77,7 +102,37 @@ function renderNode(node) {
 }
 
 function renderConnector(connector) {
-  return `<line x1="${connector.from.x}" y1="${connector.from.y}" x2="${connector.to.x}" y2="${connector.to.y}" stroke="${connector.stroke ?? "#155e75"}" stroke-width="${connector.strokeWidth ?? 4}" marker-end="url(#arrowhead)" stroke-linecap="round" />`;
+  const geometry = buildConnectorGeometry(connector);
+  const stroke = connector.stroke ?? "#155e75";
+  const strokeWidth = connector.strokeWidth ?? 4;
+  const label = connector.label
+    ? `<text x="${geometry.label.x}" y="${geometry.label.y}" text-anchor="middle" font-size="13" font-weight="700" font-family="${escapeXml(
+        getFontFamilyStack("grotesk"),
+      )}" fill="${stroke}" stroke="#ffffff" stroke-width="4" paint-order="stroke">${escapeXml(
+        connector.label,
+      )}</text>`
+    : "";
+  const arrow =
+    connector.kind === "activation"
+      ? `<polygon points="${buildConnectorArrowHead(geometry.endSegment)}" fill="${stroke}" />`
+      : "";
+  const inhibition =
+    connector.kind === "inhibition"
+      ? (() => {
+          const bar = buildConnectorInhibitionBar(geometry.endSegment);
+          return `<line x1="${bar.x1}" y1="${bar.y1}" x2="${bar.x2}" y2="${bar.y2}" stroke="${stroke}" stroke-width="${Math.max(
+            3,
+            strokeWidth - 0.5,
+          )}" stroke-linecap="round" />`;
+        })()
+      : "";
+
+  return [
+    `<path d="${geometry.path}" fill="none" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round" />`,
+    arrow,
+    inhibition,
+    label,
+  ].join("");
 }
 
 function guessMimeTypeFromUrl(url) {
@@ -204,7 +259,6 @@ export function projectToSvg(project, options = {}) {
   return [
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
-    `<defs><marker id="arrowhead" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0,0 L12,6 L0,12 z" fill="#155e75" /></marker></defs>`,
     includeBackground ? `<rect width="${width}" height="${height}" fill="${background}" />` : "",
     connectors,
     nodes,
@@ -377,4 +431,3 @@ export function collectProjectCitations(project) {
 
   return citations.join("\n");
 }
-

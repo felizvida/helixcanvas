@@ -43,10 +43,13 @@ The project is being shaped as a public-good tool rather than a commercial SaaS 
 - Real biology example figures and tutorial artifacts for signaling, CRISPR workflow, and retinal degeneration
 - Multi-select, marquee selection, grouping, alignment guides, align/distribute, reorder, lock, and hide controls
 - Panel-layout presets, legend blocks, callout blocks, scale bars, and reusable components
-- Local project open/save, recovery drafts, and named local snapshots
+- Local project open/save, recovery drafts, named local snapshots, snapshot compare, and figure branching
 - Inline pinned review comments that stay in the project but stay out of exports
+- Semantic asset retrieval plus domain starter kits for oncology, immunology, neuroscience, and microscopy workflows
 - SVG, PNG, PDF, JSON, and citation-bundle export paths
-- Optional AI brief-to-plan drafting and figure critique with the API key kept on the server
+- Optional AI brief-to-plan drafting, edit-by-instruction, and figure critique with the API key kept on the server
+- Command palette workflow for fast local actions and AI-powered figure edits
+- Installable offline-ready app shell with service-worker caching for local-first use
 
 ## Why It Feels Different
 
@@ -58,6 +61,7 @@ The project is being shaped as a public-good tool rather than a commercial SaaS 
 ## Project Docs
 
 - [Open-source roadmap](./docs/OSS_ROADMAP.md)
+- [Personal workbench direction](./docs/PERSONAL_WORKBENCH.md)
 - [GitHub milestone plan](./docs/GITHUB_MILESTONES.md)
 - [Product overview](./docs/PRODUCT_OVERVIEW.md)
 - [Asset pack spec](./docs/ASSET_PACK_SPEC.md)
@@ -128,14 +132,16 @@ GitHub Actions runs the same checks on pushes to `main` and on pull requests thr
 - `src/lib/layoutPresets.js` — manuscript panel layout logic
 - `src/lib/projectFiles.js` — local project file helpers and validation
 - `src/lib/projectSnapshots.js` — named local checkpoints
+- `src/lib/projectCompare.js` — snapshot-to-current comparison summaries
 - `src/lib/reusableComponents.js` — reusable motif and component storage
 - `src/lib/reviewComments.js` — pinned review notes that persist locally
 - `src/lib/exporters.js` — SVG, PNG, PDF, JSON, and attribution export helpers
 
 ### Assets
 
-- `src/lib/assets.js` — ranking, recents, favorites, and suggestion helpers
+- `src/lib/assets.js` — ranking, semantic retrieval, recents, favorites, and suggestion helpers
 - `src/lib/assetPacks.js` — pack schema, normalization, validation, and summary helpers
+- `src/data/domainStarterKits.js` — domain-tuned starting points for common biological figure workflows
 - `packs/` — first-class committed asset pack files for built-ins and examples
 - `public/packs/` — local assets referenced by committed pack files
 - `scripts/validate-asset-pack.mjs` — pack validation CLI used locally and in CI
@@ -154,9 +160,9 @@ The repo has already moved beyond “blank-canvas prototype” territory. The ac
 
 Current focus:
 
-- richer text and connector editing
+- richer scientific builders and smarter templates
 - stronger export presets for paper, slide, and poster workflows
-- better retrieval and pack discovery
+- better retrieval, starter kits, and pack discovery
 - more tutorials, examples, and contributor-facing architecture docs
 
 See [docs/OSS_ROADMAP.md](./docs/OSS_ROADMAP.md) and [docs/GITHUB_MILESTONES.md](./docs/GITHUB_MILESTONES.md) for the concrete milestone structure.

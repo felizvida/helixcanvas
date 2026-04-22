@@ -1,3 +1,19 @@
+export const SEARCH_ALIASES = {
+  microscopy: ["confocal", "microscope", "imaging", "staining"],
+  confocal: ["microscopy", "imaging", "laser"],
+  receptor: ["membrane receptor", "cell surface receptor", "kinase"],
+  signaling: ["cascade", "pathway", "relay", "transduction"],
+  pathway: ["signaling", "cascade", "mechanism"],
+  macrophage: ["monocyte", "innate immune cell", "phagocyte"],
+  monocyte: ["macrophage", "innate immune cell"],
+  immunology: ["immune", "macrophage", "cytokine", "antibody"],
+  retina: ["retinal", "photoreceptor", "eye", "neuron"],
+  neuroscience: ["neuron", "retina", "glia", "synapse"],
+  crispr: ["cas9", "editing", "knockout", "guide rna"],
+  pathology: ["disease", "degeneration", "injury", "stress"],
+  complement: ["antibody", "immune tagging", "immune complex"],
+};
+
 export function toggleFavoriteAssetId(ids, assetId) {
   if (!assetId) {
     return ids;
@@ -29,9 +45,39 @@ function getRecentScore(assetId, recentAssetIds) {
   return index === -1 ? 0 : Math.max(0, recentAssetIds.length - index);
 }
 
-export function getAssetMatchScore(asset, suggestion) {
-  const query = suggestion.query.toLowerCase();
-  const terms = query.split(/[^a-z0-9]+/i).filter(Boolean);
+export function expandSearchTerms(query) {
+  const rawTerms = String(query)
+    .toLowerCase()
+    .split(/[^a-z0-9]+/i)
+    .filter(Boolean);
+  const terms = new Set(rawTerms);
+
+  rawTerms.forEach((term) => {
+    const aliases = SEARCH_ALIASES[term] ?? [];
+
+    aliases.forEach((alias) => {
+      alias
+        .toLowerCase()
+        .split(/[^a-z0-9]+/i)
+        .filter(Boolean)
+        .forEach((token) => terms.add(token));
+    });
+  });
+
+  return [...terms];
+}
+
+export function matchesAssetSearchQuery(asset, query) {
+  if (!query?.trim()) {
+    return true;
+  }
+
+  return getSearchMatchScore(asset, query) > 0;
+}
+
+export function getSearchMatchScore(asset, query) {
+  const normalizedQuery = query.toLowerCase().trim();
+  const expandedTerms = expandSearchTerms(normalizedQuery);
   const haystack = [
     asset.title,
     asset.searchText,
@@ -46,23 +92,43 @@ export function getAssetMatchScore(asset, suggestion) {
 
   let score = 0;
 
+  if (haystack.includes(normalizedQuery)) {
+    score += 10;
+  }
+
+  expandedTerms.forEach((term) => {
+    if (asset.title?.toLowerCase().includes(term)) {
+      score += 4;
+    }
+    if (asset.searchText?.includes(term)) {
+      score += 3;
+    }
+    if (asset.categoryLabel?.toLowerCase().includes(term)) {
+      score += 2;
+    }
+    if (asset.packTitle?.toLowerCase().includes(term)) {
+      score += 1;
+    }
+  });
+
+  return score;
+}
+
+export function getAssetMatchScore(asset, suggestion) {
+  const query = suggestion.query.toLowerCase();
+  const terms = expandSearchTerms(query);
+  let score = getSearchMatchScore(asset, query);
+
   if (asset.sourceBucket === suggestion.preferredSourceBucket) {
     score += 6;
   }
 
-  if (haystack.includes(query)) {
-    score += 8;
-  }
-
   for (const term of terms) {
     if (asset.title?.toLowerCase().includes(term)) {
-      score += 5;
+      score += 2;
     }
     if (asset.searchText?.includes(term)) {
-      score += 4;
-    }
-    if (asset.categoryLabel?.toLowerCase().includes(term)) {
-      score += 2;
+      score += 1;
     }
   }
 

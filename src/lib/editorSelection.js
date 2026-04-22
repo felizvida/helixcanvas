@@ -4,7 +4,10 @@ function uniqueNodeIds(ids) {
 
 function getNodeSize(node) {
   const width = Number.isFinite(node.w) ? node.w : 0;
-  const textHeight = Math.max(node.fontSize ?? 24, 18) * 1.35;
+  const fontSize = Math.max(node.fontSize ?? 24, 18);
+  const lineHeight = Number(node.lineHeight) || 1.3;
+  const lineCount = Math.max(String(node.text ?? "").split("\n").length, 1);
+  const textHeight = fontSize * lineHeight * lineCount;
   const height = Number.isFinite(node.h) ? node.h : node.type === "text" ? textHeight : 0;
 
   return {
@@ -37,7 +40,7 @@ export function getSelectedNodes(project, selection) {
 
 export function getNodeBounds(node) {
   const { width, height } = getNodeSize(node);
-  const top = node.type === "text" ? node.y - height : node.y;
+  const top = node.type === "text" ? node.y - (node.fontSize ?? 24) : node.y;
 
   return {
     left: node.x,

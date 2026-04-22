@@ -34,6 +34,9 @@ test("projectToSvg renders escaped text, connectors, and assets", () => {
         to: { x: 30, y: 40 },
         stroke: "#155e75",
         strokeWidth: 4,
+        kind: "activation",
+        route: "elbow",
+        label: "blocks",
       },
     ],
     nodes: [
@@ -41,9 +44,13 @@ test("projectToSvg renders escaped text, connectors, and assets", () => {
         type: "text",
         x: 40,
         y: 80,
-        text: "Signal & response",
+        text: "Signal & response\nwith context",
         fontSize: 20,
+        fontFamily: "serif",
+        textAlign: "center",
+        lineHeight: 1.4,
         color: "#12232e",
+        w: 180,
       },
       {
         type: "asset",
@@ -75,9 +82,13 @@ test("projectToSvg renders escaped text, connectors, and assets", () => {
   });
 
   assert.match(svg, /Signal &amp; response/);
+  assert.match(svg, /with context/);
   assert.match(svg, /Panel &lt;A&gt;/);
   assert.match(svg, /<image[^>]+https:\/\/example.com\/cell\.svg/);
-  assert.match(svg, /marker-end="url\(#arrowhead\)"/);
+  assert.match(svg, /font-family="&quot;Iowan Old Style&quot;, &quot;Palatino Linotype&quot;, Georgia, serif"/);
+  assert.match(svg, /text-anchor="middle"/);
+  assert.match(svg, /<polygon points="/);
+  assert.match(svg, /blocks/);
   assert.doesNotMatch(svg, /Hidden note/);
 });
 
@@ -96,6 +107,31 @@ test("projectToSvg can omit the board background for transparent exports", () =>
   );
 
   assert.doesNotMatch(svg, /<rect width="640" height="480" fill="#f7f2ea"/);
+});
+
+test("projectToSvg renders inhibition connectors as bars without arrow markers", () => {
+  const svg = projectToSvg({
+    board: {
+      width: 320,
+      height: 240,
+      background: "#ffffff",
+    },
+    connectors: [
+      {
+        from: { x: 40, y: 120 },
+        to: { x: 220, y: 120 },
+        stroke: "#8f4b2d",
+        strokeWidth: 5,
+        kind: "inhibition",
+        route: "straight",
+      },
+    ],
+    nodes: [],
+  });
+
+  assert.match(svg, /stroke="#8f4b2d"/);
+  assert.doesNotMatch(svg, /marker-end/);
+  assert.match(svg, /<line x1="220" y1="126" x2="220" y2="114"/);
 });
 
 test("buildExportFilename normalizes project names for downloads", () => {

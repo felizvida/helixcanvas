@@ -159,6 +159,83 @@ const CRITIQUE_SCHEMA = {
   ],
 };
 
+const EDIT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    summary: { type: "string" },
+    confidence: { type: "string" },
+    actions: {
+      type: "array",
+      minItems: 1,
+      maxItems: 6,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          actionType: {
+            type: "string",
+            enum: [
+              "set_project_meta",
+              "update_node_text",
+              "update_node_style",
+              "update_node_layout",
+              "update_connector",
+              "add_callout",
+              "add_comment",
+              "focus_library_search",
+            ],
+          },
+          nodeId: { type: "string" },
+          connectorId: { type: "string" },
+          projectName: { type: "string" },
+          brief: { type: "string" },
+          text: { type: "string" },
+          title: { type: "string" },
+          body: { type: "string" },
+          author: { type: "string" },
+          label: { type: "string" },
+          query: { type: "string" },
+          preferredSourceBucket: {
+            type: "string",
+            enum: ["bioicons", "servier-vector", "servier-original", "figurelabs-import"],
+          },
+          kind: {
+            type: "string",
+            enum: ["activation", "inhibition", "neutral"],
+          },
+          route: {
+            type: "string",
+            enum: ["straight", "elbow"],
+          },
+          fontFamily: {
+            type: "string",
+            enum: ["sans", "serif", "grotesk", "mono"],
+          },
+          textAlign: {
+            type: "string",
+            enum: ["left", "center", "right"],
+          },
+          fontSize: { type: "number" },
+          fontWeight: { type: "number" },
+          lineHeight: { type: "number" },
+          strokeWidth: { type: "number" },
+          color: { type: "string" },
+          fill: { type: "string" },
+          stroke: { type: "string" },
+          x: { type: "number" },
+          y: { type: "number" },
+          w: { type: "number" },
+          h: { type: "number" },
+        },
+        required: ["actionType"],
+      },
+    },
+    followUp: { type: "string" },
+  },
+  required: ["summary", "confidence", "actions", "followUp"],
+};
+
 function assertConfigured() {
   if (!openai) {
     throw new Error("OPENAI_API_KEY is not configured on the server.");
@@ -245,6 +322,24 @@ function buildCritiquePrompt({ brief, currentProject }) {
   ].join("\n");
 }
 
+function buildEditPrompt({ instruction, currentProject }) {
+  return [
+    "Edit the current HelixCanvas figure using structured scene-graph actions.",
+    "",
+    `User instruction:\n${instruction.trim()}`,
+    "",
+    `Current project context:\n${JSON.stringify(currentProject, null, 2)}`,
+    "",
+    "Rules:",
+    "- Use only ids that already exist in the provided project context.",
+    "- Prefer editing the current selection if it is relevant to the instruction.",
+    "- Keep the number of actions minimal and high-value.",
+    "- If the request is ambiguous, add a review comment instead of making a risky scientific claim.",
+    "- Use focus_library_search when the best next step is to surface missing assets rather than invent them.",
+    "- Do not expose chain-of-thought. Do not return markdown.",
+  ].join("\n");
+}
+
 async function requestStructuredOutput({ systemPrompt, userPrompt, schemaName, schema, effort }) {
   assertConfigured();
 
@@ -326,5 +421,28 @@ export async function critiqueFigureProject({ brief, currentProject }) {
     schemaName: "helixcanvas_figure_critique",
     schema: CRITIQUE_SCHEMA,
     effort: "low",
+  });
+}
+
+export async function editFigureProject({ instruction, currentProject }) {
+  const systemPrompt = [
+    "You are the HelixCanvas AI figure editor.",
+    "Turn user instructions into safe, structured edits for a local-first biomedical illustration scene graph.",
+    "You may update text, styling, connector semantics, layout, comments, and search focus suggestions.",
+    "Do not invent unsupported science. If the request is unclear, leave a comment instead of hallucinating content.",
+    "",
+    "Available templates:",
+    TEMPLATE_SUMMARY,
+    "",
+    "Source guidance:",
+    SOURCE_SUMMARY,
+  ].join("\n");
+
+  return requestStructuredOutput({
+    systemPrompt,
+    userPrompt: buildEditPrompt({ instruction, currentProject }),
+    schemaName: "helixcanvas_figure_edit",
+    schema: EDIT_SCHEMA,
+    effort: "medium",
   });
 }

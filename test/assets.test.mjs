@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 
 import {
   buildAiSuggestions,
+  expandSearchTerms,
+  getSearchMatchScore,
   isDuplicateImportedAsset,
+  matchesAssetSearchQuery,
   pushRecentAsset,
   sortLibraryAssets,
   toggleFavoriteAssetId,
@@ -121,4 +124,25 @@ test("sortLibraryAssets respects favorites, recents, and alphabetical fallbacks"
     alphabetical.map((asset) => asset.id),
     ["a", "b", "c"],
   );
+});
+
+test("expandSearchTerms adds useful aliases for domain queries", () => {
+  const terms = expandSearchTerms("macrophage microscopy");
+
+  assert.equal(terms.includes("monocyte"), true);
+  assert.equal(terms.includes("confocal"), true);
+  assert.equal(terms.includes("imaging"), true);
+});
+
+test("matchesAssetSearchQuery uses semantic aliases instead of literal matches only", () => {
+  const asset = {
+    id: "confocal-scope",
+    title: "Confocal scanning microscope",
+    searchText: "laser imaging microscope",
+    categoryLabel: "Lab apparatus",
+    packTitle: "Microscopy kit",
+  };
+
+  assert.equal(matchesAssetSearchQuery(asset, "microscopy"), true);
+  assert.ok(getSearchMatchScore(asset, "microscopy") >= 10);
 });

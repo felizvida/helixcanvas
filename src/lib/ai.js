@@ -36,3 +36,15 @@ export async function requestFigureCritique(input) {
 
   return parseJsonResponse(response);
 }
+
+export async function requestFigureEdit(input) {
+  const response = await fetch("/api/ai/edit", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+
+  return parseJsonResponse(response);
+}

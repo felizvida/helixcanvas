@@ -1,0 +1,19 @@
+{
+  "name": "HelixCanvas",
+  "short_name": "HelixCanvas",
+  "description": "Local-first biomedical figure workstation with open asset packs, structured AI editing, and publication-ready export.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5efe6",
+  "theme_color": "#0f766e",
+  "categories": ["science", "medical", "education", "productivity"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

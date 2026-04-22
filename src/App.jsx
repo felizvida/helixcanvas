@@ -1,8 +1,9 @@
 import { startTransition, useDeferredValue, useEffect, useRef, useState } from "react";
 import { SERVIER_ATTRIBUTION, SERVIER_KITS, SERVIER_LICENSE, SERVIER_ORIGINALS, SOURCE_POLICIES } from "./data/servier.js";
 import { EXAMPLE_PROJECTS } from "./data/exampleProjects.js";
+import { DOMAIN_STARTER_KITS } from "./data/domainStarterKits.js";
 import { TEMPLATES } from "./data/templates.js";
-import { fetchAiHealth, requestFigureCritique, requestFigurePlan } from "./lib/ai.js";
+import { fetchAiHealth, requestFigureCritique, requestFigureEdit, requestFigurePlan } from "./lib/ai.js";
 import {
   createBioiconsCommunityPack,
   createServierOriginalPack,
@@ -14,6 +15,7 @@ import {
 import {
   buildAiSuggestions,
   isDuplicateImportedAsset,
+  matchesAssetSearchQuery,
   pushRecentAsset,
   sortLibraryAssets,
   toggleFavoriteAssetId,
@@ -46,6 +48,12 @@ import {
   isNodeSelection,
 } from "./lib/editorSelection.js";
 import {
+  buildConnectorArrowHead,
+  buildConnectorGeometry,
+  buildConnectorInhibitionBar,
+} from "./lib/connectors.js";
+import { FONT_FAMILIES, getFontFamilyStack } from "./lib/figureStyles.js";
+import {
   createProjectDocument,
   parseProjectDocument,
   suggestProjectFilename,
@@ -55,6 +63,7 @@ import {
   pushProjectSnapshot,
   removeProjectSnapshot,
 } from "./lib/projectSnapshots.js";
+import { compareProjects } from "./lib/projectCompare.js";
 import {
   buildPanelLayout,
   getPanelCellCount,
@@ -109,6 +118,23 @@ const BOARD_PRESETS = {
 
 const GRID_SIZE = 32;
 
+const TEXT_ALIGN_OPTIONS = [
+  { id: "left", label: "Left" },
+  { id: "center", label: "Center" },
+  { id: "right", label: "Right" },
+];
+
+const CONNECTOR_KIND_OPTIONS = [
+  { id: "activation", label: "Activation" },
+  { id: "inhibition", label: "Inhibition" },
+  { id: "neutral", label: "Neutral" },
+];
+
+const CONNECTOR_ROUTE_OPTIONS = [
+  { id: "straight", label: "Straight" },
+  { id: "elbow", label: "Elbow" },
+];
+
 const HERO_KPIS = [
   { label: "Open assets", value: "2.8K+" },
   { label: "Servier vectors", value: "1.3K+" },
@@ -126,6 +152,9 @@ function withNodeState(node) {
     rotation: node.rotation ?? 0,
     opacity: node.opacity ?? 1,
     strokeWidth: node.strokeWidth ?? 2,
+    fontFamily: node.fontFamily ?? "sans",
+    textAlign: node.textAlign ?? "left",
+    lineHeight: node.lineHeight ?? 1.3,
     groupId: node.groupId ?? null,
     hidden: Boolean(node.hidden),
     locked: Boolean(node.locked),
@@ -137,6 +166,9 @@ function withConnectorState(connector, strokeFallback = "#155e75") {
     id: connector.id ?? createId("connector"),
     stroke: connector.stroke ?? strokeFallback,
     strokeWidth: connector.strokeWidth ?? 4,
+    kind: connector.kind ?? "activation",
+    route: connector.route ?? "straight",
+    label: connector.label ?? "",
     from: { ...connector.from },
     to: { ...connector.to },
   };
@@ -322,7 +354,7 @@ function makeTextNode(position) {
   return withNodeState({
     id: createId("node"),
     type: "text",
-    text: "Add annotation",
+    text: "Add annotation\nwith a second line",
     fontSize: 24,
     fontWeight: 700,
     color: "#12232e",
@@ -332,7 +364,7 @@ function makeTextNode(position) {
   });
 }
 
-function createCalloutAnnotation(position) {
+function createCalloutAnnotation(position, options = {}) {
   const groupId = createId("group");
   return [
     withNodeState({
@@ -358,7 +390,7 @@ function createCalloutAnnotation(position) {
       role: "annotation-title",
       type: "text",
       title: "Callout title",
-      text: "Key finding",
+      text: options.title ?? "Key finding",
       fontSize: 22,
       fontWeight: 800,
       color: "#8f4b2d",
@@ -372,7 +404,7 @@ function createCalloutAnnotation(position) {
       role: "annotation-body",
       type: "text",
       title: "Callout body",
-      text: "Add a concise interpretation or methodological note here.",
+      text: options.body ?? "Add a concise interpretation or methodological note here.",
       fontSize: 16,
       fontWeight: 500,
       color: "#51606d",
@@ -567,6 +599,88 @@ function buildProjectSummaryForAi(project) {
       sourceLabel: node.sourceLabel ?? "",
     })),
     citationsCount: citations ? citations.split("\n").filter(Boolean).length : 0,
+  };
+}
+
+function summarizeNodeForAi(node) {
+  return {
+    id: node.id,
+    type: node.type,
+    role: node.role ?? "",
+    title: node.title ?? "",
+    text: node.text ?? "",
+    groupId: node.groupId ?? null,
+    sourceLabel: node.sourceLabel ?? "",
+    x: Math.round(node.x ?? 0),
+    y: Math.round(node.y ?? 0),
+    w: Math.round(node.w ?? 0),
+    h: Math.round(node.h ?? 0),
+    fontSize: node.fontSize ?? null,
+    fontWeight: node.fontWeight ?? null,
+    fontFamily: node.fontFamily ?? "",
+    textAlign: node.textAlign ?? "",
+    lineHeight: node.lineHeight ?? null,
+  };
+}
+
+function summarizeConnectorForAi(connector) {
+  return {
+    id: connector.id,
+    kind: connector.kind ?? "activation",
+    route: connector.route ?? "straight",
+    label: connector.label ?? "",
+    stroke: connector.stroke ?? "#155e75",
+    strokeWidth: connector.strokeWidth ?? 4,
+    from: {
+      x: Math.round(connector.from.x ?? 0),
+      y: Math.round(connector.from.y ?? 0),
+    },
+    to: {
+      x: Math.round(connector.to.x ?? 0),
+      y: Math.round(connector.to.y ?? 0),
+    },
+  };
+}
+
+function buildProjectEditContext(project, options = {}) {
+  const visibleNodes = project.nodes.filter((node) => !node.hidden);
+  const selectedNodeIds = options.selectedNodeIds ?? [];
+  const selectedNodes = project.nodes.filter((node) => selectedNodeIds.includes(node.id));
+
+  return {
+    name: project.name,
+    brief: project.brief,
+    board: project.board,
+    counts: {
+      nodes: visibleNodes.length,
+      connectors: project.connectors.length,
+      comments: (project.comments ?? []).length,
+    },
+    nodes: visibleNodes.slice(0, 24).map(summarizeNodeForAi),
+    connectors: project.connectors.slice(0, 12).map(summarizeConnectorForAi),
+    comments: (project.comments ?? []).slice(0, 8).map((comment) => ({
+      id: comment.id,
+      nodeId: comment.nodeId ?? null,
+      status: comment.status,
+      body: comment.body,
+      author: comment.author,
+      x: Math.round(comment.x ?? 0),
+      y: Math.round(comment.y ?? 0),
+    })),
+    selection: {
+      nodeIds: selectedNodeIds,
+      nodes: selectedNodes.slice(0, 8).map(summarizeNodeForAi),
+      connector: options.selectedConnector ? summarizeConnectorForAi(options.selectedConnector) : null,
+      comment: options.selectedComment
+        ? {
+            id: options.selectedComment.id,
+            nodeId: options.selectedComment.nodeId ?? null,
+            status: options.selectedComment.status,
+            body: options.selectedComment.body,
+            author: options.selectedComment.author,
+          }
+        : null,
+    },
   };
 }
 
@@ -839,6 +953,45 @@ function ExampleProjectCard({ example, onLoad, onUseBrief }) {
   );
 }
 
+function StarterKitCard({ starterKit, example, onApply, onFocusLibrary, onLoadExample }) {
+  return (
+    <article className="example-card starter-kit-card">
+      <div className="example-card__head">
+        <div>
+          <h4>{starterKit.title}</h4>
+          <p>{starterKit.description}</p>
+        </div>
+      </div>
+      <div className="ai-pill-row">
+        {starterKit.tags.map((tag) => (
+          <span key={tag} className="ai-pill">
+            {tag}
+          </span>
+        ))}
+      </div>
+      <p className="helper-copy">{starterKit.brief}</p>
+      <div className="library-summary">
+        <span>{starterKit.focusQuery}</span>
+        <span>{starterKit.preferredSourceBucket}</span>
+        {example ? <span>{example.title}</span> : null}
+      </div>
+      <div className="example-card__actions">
+        <button type="button" className="secondary-button" onClick={() => onApply(starterKit)}>
+          Load starter kit
+        </button>
+        <button type="button" className="ghost-button" onClick={() => onFocusLibrary(starterKit)}>
+          Focus library
+        </button>
+        {example ? (
+          <button type="button" className="ghost-button" onClick={() => onLoadExample(starterKit)}>
+            Open example
+          </button>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
 function KitCard({ kit }) {
   return (
     <article className="kit-card">
@@ -968,17 +1121,29 @@ function App() {
     typeof window === "undefined" ? [] : parseStoredJson(STORAGE_KEYS.projectSnapshots, []),
   );
   const [snapshotLabel, setSnapshotLabel] = useState("");
+  const [compareSnapshotId, setCompareSnapshotId] = useState("");
   const [reusableComponents, setReusableComponents] = useState(() =>
     typeof window === "undefined" ? [] : parseStoredJson(STORAGE_KEYS.reusableComponents, []),
   );
   const [componentLabel, setComponentLabel] = useState("");
+  const [aiEditPrompt, setAiEditPrompt] = useState("");
+  const [aiEditResult, setAiEditResult] = useState(null);
   const [aiBusy, setAiBusy] = useState({
     planning: false,
     critique: false,
+    editing: false,
   });
   const [exportScale, setExportScale] = useState(2);
   const [transparentExport, setTransparentExport] = useState(false);
   const [commentsVisible, setCommentsVisible] = useState(true);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [commandPaletteQuery, setCommandPaletteQuery] = useState("");
+  const [commandPaletteIndex, setCommandPaletteIndex] = useState(0);
+  const [online, setOnline] = useState(() =>
+    typeof navigator === "undefined" ? true : navigator.onLine,
+  );
+  const [installPromptEvent, setInstallPromptEvent] = useState(null);
+  const [installBusy, setInstallBusy] = useState(false);
   const [exportBusy, setExportBusy] = useState({
     png: false,
     pdf: false,
@@ -989,6 +1154,7 @@ function App() {
   const dragHistoryCapturedRef = useRef(false);
   const projectImportInputRef = useRef(null);
   const projectFileHandleRef = useRef(null);
+  const commandPaletteInputRef = useRef(null);
   const deferredQuery = useDeferredValue(libraryQuery.trim().toLowerCase());
 
   useEffect(() => {
@@ -1140,6 +1306,51 @@ function App() {
     const timer = window.setTimeout(() => setNotice(""), 2800);
     return () => window.clearTimeout(timer);
   }, [notice]);
+
+  useEffect(() => {
+    function handleOnline() {
+      setOnline(true);
+    }
+
+    function handleOffline() {
+      setOnline(false);
+    }
+
+    function handleBeforeInstallPrompt(event) {
+      event.preventDefault();
+      setInstallPromptEvent(event);
+    }
+
+    function handleAppInstalled() {
+      setInstallPromptEvent(null);
+      setNotice("HelixCanvas installed");
+    }
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!commandPaletteOpen) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      commandPaletteInputRef.current?.focus();
+      commandPaletteInputRef.current?.select();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [commandPaletteOpen]);
 
   useEffect(() => {
     const unifiedLibrary = [...importedAssets, ...library];
@@ -1341,10 +1552,7 @@ function App() {
       const matchesSource = sourceFilter === "all" || asset.sourceBucket === sourceFilter;
       const matchesPack = packFilter === "all" || asset.packId === packFilter;
       const matchesCategory = categoryFilter === "all" || asset.categoryLabel === categoryFilter;
-      const matchesQuery =
-        !deferredQuery ||
-        asset.title.toLowerCase().includes(deferredQuery) ||
-        asset.searchText?.includes(deferredQuery);
+      const matchesQuery = !deferredQuery || matchesAssetSearchQuery(asset, deferredQuery);
 
       return matchesSource && matchesPack && matchesCategory && matchesQuery;
     }),
@@ -1415,6 +1623,10 @@ function App() {
     .slice(0, 6);
   const projectFileLabel = projectFileName || suggestProjectFilename(project.name);
   const hasUnsavedChanges = savedProjectUpdatedAt !== project.updatedAt;
+  const compareSnapshot = projectSnapshots.find((snapshot) => snapshot.id === compareSnapshotId) ?? null;
+  const snapshotComparison = compareSnapshot?.project
+    ? compareProjects(project, compareSnapshot.project)
+    : null;
 
   function applyProjectChange(updater, options = {}) {
     const { selection: nextSelection, notice: noticeMessage } = options;
@@ -1528,8 +1740,51 @@ function App() {
     });
   }
 
+  function branchProject(sourceProject, options = {}) {
+    const baseName = sourceProject?.name || "HelixCanvas figure";
+    const suffix = options.suffix?.trim() || "Variant";
+    const branchedProject = {
+      ...sourceProject,
+      id: createId("project"),
+      name: `${baseName} · ${suffix}`,
+      updatedAt: new Date().toISOString(),
+    };
+
+    projectFileHandleRef.current = null;
+    replaceProjectWorkspace(branchedProject, {
+      fileName: "",
+      savedUpdatedAt: null,
+      notice: options.notice ?? `Branched ${baseName}`,
+      stageReason: options.stageReason ?? `Created branch from ${baseName}`,
+    });
+    setProjectFileName("");
+    setSavedProjectUpdatedAt(null);
+  }
+
+  function branchFromCurrentProject() {
+    branchProject(project, {
+      suffix: "Branch",
+      notice: "Created a branched figure workspace",
+      stageReason: "Created a branch from the current workspace",
+    });
+  }
+
+  function branchFromSnapshot(snapshot) {
+    if (!snapshot?.project) {
+      setNotice("That snapshot is no longer available");
+      return;
+    }
+
+    branchProject(snapshot.project, {
+      suffix: "Branch",
+      notice: `Branched from snapshot: ${snapshot.label}`,
+      stageReason: `Branched from snapshot ${snapshot.label}`,
+    });
+  }
+
   function deleteProjectSnapshot(snapshotId) {
     setProjectSnapshots((current) => removeProjectSnapshot(current, snapshotId));
+    setCompareSnapshotId((current) => (current === snapshotId ? "" : current));
     setNotice("Deleted snapshot");
   }
 
@@ -1711,6 +1966,69 @@ function App() {
         notice: "Deleted review comment",
       },
     );
+  }
+
+  function openCommandPalette(seed = "") {
+    setCommandPaletteQuery(seed);
+    setCommandPaletteIndex(0);
+    setCommandPaletteOpen(true);
+  }
+
+  function closeCommandPalette() {
+    setCommandPaletteOpen(false);
+    setCommandPaletteQuery("");
+    setCommandPaletteIndex(0);
+  }
+
+  async function promptInstallApp() {
+    if (!installPromptEvent) {
+      setNotice("Install prompt is not available in this browser yet");
+      return;
+    }
+
+    setInstallBusy(true);
+
+    try {
+      await installPromptEvent.prompt();
+      await installPromptEvent.userChoice.catch(() => null);
+      setInstallPromptEvent(null);
+      setNotice("Install prompt opened");
+    } finally {
+      setInstallBusy(false);
+    }
+  }
+
+  function focusStarterKit(starterKit) {
+    setBrief(starterKit.brief);
+    setLibraryQuery(starterKit.focusQuery);
+    setSourceFilter(starterKit.preferredSourceBucket ?? "all");
+    setPackFilter("all");
+    setCategoryFilter("all");
+    setNotice(`Focused the library on ${starterKit.title}`);
+  }
+
+  function applyStarterKit(starterKit) {
+    const template =
+      TEMPLATES.find((item) => item.id === starterKit.templateId) ?? TEMPLATES[0];
+
+    setBrief(starterKit.brief);
+    setLibraryQuery(starterKit.focusQuery);
+    setSourceFilter(starterKit.preferredSourceBucket ?? "all");
+    setPackFilter("all");
+    setCategoryFilter("all");
+    applyTemplate(template);
+    setNotice(`Loaded starter kit: ${starterKit.title}`);
+  }
+
+  function loadStarterKitExample(starterKit) {
+    const example = EXAMPLE_PROJECTS.find((item) => item.id === starterKit.exampleId);
+
+    if (!example) {
+      applyStarterKit(starterKit);
+      return;
+    }
+
+    loadExampleProject(example);
   }
 
   function requestProjectOpen() {
@@ -2085,11 +2403,28 @@ function App() {
 
   useEffect(() => {
     function handleKeydown(event) {
-      if (isTypingTarget(event.target)) {
+      const metaKey = event.metaKey || event.ctrlKey;
+
+      if (metaKey && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+
+        if (commandPaletteOpen) {
+          closeCommandPalette();
+        } else {
+          openCommandPalette(aiEditPrompt);
+        }
         return;
       }
 
-      const metaKey = event.metaKey || event.ctrlKey;
+      if (commandPaletteOpen && event.key === "Escape") {
+        event.preventDefault();
+        closeCommandPalette();
+        return;
+      }
+
+      if (isTypingTarget(event.target)) {
+        return;
+      }
 
       if (metaKey && event.key.toLowerCase() === "s") {
         event.preventDefault();
@@ -2214,7 +2549,21 @@ function App() {
 
     window.addEventListener("keydown", handleKeydown);
     return () => window.removeEventListener("keydown", handleKeydown);
-  }, [groupSelection, hasLockedSelectedNodes, hasNodeSelection, historyVersion, project.nodes, selectedNodeIds, selection, snapToGrid, ungroupSelection]);
+  }, [
+    aiEditPrompt,
+    closeCommandPalette,
+    commandPaletteOpen,
+    groupSelection,
+    hasLockedSelectedNodes,
+    hasNodeSelection,
+    historyVersion,
+    openCommandPalette,
+    project.nodes,
+    selectedNodeIds,
+    selection,
+    snapToGrid,
+    ungroupSelection,
+  ]);
 
   function addAssetToCanvas(asset) {
     const offset = 120 + project.nodes.length * 18;
@@ -2267,6 +2616,9 @@ function App() {
       to: { x: 520, y: 320 },
       stroke: project.palette?.accent ?? "#155e75",
       strokeWidth: 4,
+      kind: "activation",
+      route: "straight",
+      label: "",
     };
 
     applyProjectChange(
@@ -2431,6 +2783,255 @@ function App() {
       setNotice(error instanceof Error ? error.message : "AI critique failed");
     } finally {
       setAiBusy((current) => ({ ...current, critique: false }));
+    }
+  }
+
+  function applyAiEditResult(result) {
+    const createdNodeIds = [];
+    const touchedNodeIds = [];
+    const touchedConnectorIds = [];
+    const createdCommentIds = [];
+    let focusSearch = null;
+    let nextBriefValue = null;
+
+    const nextSelection = (() => {
+      let computedSelection;
+
+      applyProjectChange(
+        (current) => {
+          let changed = false;
+          const nextProject = {
+            ...current,
+            nodes: [...current.nodes],
+            connectors: [...current.connectors],
+            comments: [...(current.comments ?? [])],
+          };
+
+          for (const action of result.actions ?? []) {
+            if (action.actionType === "set_project_meta") {
+              const projectName = action.projectName?.trim();
+              const briefValue = action.brief?.trim();
+
+              if (projectName && projectName !== nextProject.name) {
+                nextProject.name = projectName;
+                changed = true;
+              }
+
+              if (briefValue && briefValue !== nextProject.brief) {
+                nextProject.brief = briefValue;
+                nextBriefValue = briefValue;
+                changed = true;
+              }
+            }
+
+            if (action.actionType === "update_node_text" && action.nodeId) {
+              nextProject.nodes = nextProject.nodes.map((node) => {
+                if (node.id !== action.nodeId || node.locked) {
+                  return node;
+                }
+
+                touchedNodeIds.push(node.id);
+                changed = true;
+
+                if (node.type === "text") {
+                  return {
+                    ...node,
+                    text: action.text ?? node.text,
+                  };
+                }
+
+                return {
+                  ...node,
+                  text: action.text ?? node.text,
+                  title: action.title ?? node.title,
+                };
+              });
+            }
+
+            if (action.actionType === "update_node_style" && action.nodeId) {
+              nextProject.nodes = nextProject.nodes.map((node) => {
+                if (node.id !== action.nodeId || node.locked) {
+                  return node;
+                }
+
+                touchedNodeIds.push(node.id);
+                changed = true;
+
+                return withNodeState({
+                  ...node,
+                  title: action.title ?? node.title,
+                  text: action.text ?? node.text,
+                  fontFamily: action.fontFamily ?? node.fontFamily,
+                  textAlign: action.textAlign ?? node.textAlign,
+                  fontSize: Number.isFinite(action.fontSize) ? action.fontSize : node.fontSize,
+                  fontWeight: Number.isFinite(action.fontWeight) ? action.fontWeight : node.fontWeight,
+                  lineHeight: Number.isFinite(action.lineHeight) ? action.lineHeight : node.lineHeight,
+                  color: action.color ?? node.color,
+                  fill: action.fill ?? node.fill,
+                  stroke: action.stroke ?? node.stroke,
+                });
+              });
+            }
+
+            if (action.actionType === "update_node_layout" && action.nodeId) {
+              nextProject.nodes = nextProject.nodes.map((node) => {
+                if (node.id !== action.nodeId || node.locked) {
+                  return node;
+                }
+
+                touchedNodeIds.push(node.id);
+                changed = true;
+
+                return withNodeState({
+                  ...node,
+                  x: Number.isFinite(action.x) ? Math.max(0, action.x) : node.x,
+                  y: Number.isFinite(action.y) ? Math.max(0, action.y) : node.y,
+                  w: Number.isFinite(action.w) ? Math.max(24, action.w) : node.w,
+                  h: Number.isFinite(action.h) ? Math.max(24, action.h) : node.h,
+                });
+              });
+            }
+
+            if (action.actionType === "update_connector" && action.connectorId) {
+              nextProject.connectors = nextProject.connectors.map((connector) => {
+                if (connector.id !== action.connectorId) {
+                  return connector;
+                }
+
+                touchedConnectorIds.push(connector.id);
+                changed = true;
+
+                return withConnectorState({
+                  ...connector,
+                  label: action.label ?? connector.label,
+                  kind: action.kind ?? connector.kind,
+                  route: action.route ?? connector.route,
+                  stroke: action.stroke ?? connector.stroke,
+                  strokeWidth: Number.isFinite(action.strokeWidth)
+                    ? Math.max(2, action.strokeWidth)
+                    : connector.strokeWidth,
+                });
+              });
+            }
+
+            if (action.actionType === "add_callout") {
+              const nodes = createCalloutAnnotation(
+                {
+                  x: Number.isFinite(action.x) ? action.x : 220 + nextProject.nodes.length * 8,
+                  y: Number.isFinite(action.y) ? action.y : 160 + nextProject.nodes.length * 6,
+                },
+                {
+                  title: action.title ?? "AI callout",
+                  body: action.body ?? "Add a concise interpretation here.",
+                },
+              );
+
+              createdNodeIds.push(...nodes.map((node) => node.id));
+              nextProject.nodes.push(...nodes);
+              changed = true;
+            }
+
+            if (action.actionType === "add_comment") {
+              const comment = createReviewComment({
+                id: createId("comment"),
+                body: action.body ?? "Review this part of the figure.",
+                author: action.author ?? "AI copilot",
+                nodeId: action.nodeId ?? null,
+                x: Number.isFinite(action.x) ? action.x : 180 + nextProject.comments.length * 12,
+                y: Number.isFinite(action.y) ? action.y : 120 + nextProject.comments.length * 12,
+              });
+
+              createdCommentIds.push(comment.id);
+              nextProject.comments.push(comment);
+              changed = true;
+            }
+
+            if (action.actionType === "focus_library_search" && action.query) {
+              focusSearch = {
+                query: action.query,
+                preferredSourceBucket: action.preferredSourceBucket ?? "all",
+              };
+            }
+          }
+
+          if (!changed) {
+            return current;
+          }
+
+          return nextProject;
+        },
+        {
+          selection:
+            createdCommentIds.length
+              ? { kind: "comment", id: createdCommentIds[createdCommentIds.length - 1] }
+              : createdNodeIds.length
+                ? createNodeSelection(createdNodeIds)
+                : touchedNodeIds.length
+                  ? createNodeSelection([...new Set(touchedNodeIds)])
+                  : touchedConnectorIds.length
+                    ? { kind: "connector", id: touchedConnectorIds[touchedConnectorIds.length - 1] }
+                    : undefined,
+          notice: `Applied ${result.actions.length} AI edit${result.actions.length === 1 ? "" : "s"}`,
+        },
+      );
+
+      return createdCommentIds.length
+        ? { kind: "comment", id: createdCommentIds[createdCommentIds.length - 1] }
+        : createdNodeIds.length
+          ? createNodeSelection(createdNodeIds)
+          : touchedNodeIds.length
+            ? createNodeSelection([...new Set(touchedNodeIds)])
+            : touchedConnectorIds.length
+              ? { kind: "connector", id: touchedConnectorIds[touchedConnectorIds.length - 1] }
+              : null;
+    })();
+
+    if (nextBriefValue) {
+      setBrief(nextBriefValue);
+    }
+
+    if (focusSearch) {
+      setLibraryQuery(focusSearch.query);
+      setSourceFilter(focusSearch.preferredSourceBucket);
+      setPackFilter("all");
+      setCategoryFilter("all");
+    }
+
+    setAiEditResult(result);
+    return nextSelection;
+  }
+
+  async function editWithAi(instruction = aiEditPrompt) {
+    const prompt = instruction.trim();
+
+    if (!prompt) {
+      setNotice("Add an edit instruction first");
+      return;
+    }
+
+    if (!aiStatus.configured) {
+      setNotice(aiStatus.error || "AI editing is unavailable until the server is configured");
+      return;
+    }
+
+    setAiBusy((current) => ({ ...current, editing: true }));
+
+    try {
+      const response = await requestFigureEdit({
+        instruction: prompt,
+        currentProject: buildProjectEditContext(project, {
+          selectedNodeIds,
+          selectedConnector,
+          selectedComment,
+        }),
+      });
+
+      applyAiEditResult(response.edit);
+      setAiEditPrompt(prompt);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "AI editing failed");
+    } finally {
+      setAiBusy((current) => ({ ...current, editing: false }));
     }
   }
 
@@ -2836,9 +3437,174 @@ function App() {
             ? "servier"
             : selectedNode.sourceBucket === "bioicons"
               ? "bioicons"
-              : "",
+            : "",
       )
     : null;
+  const rawPaletteCommands = [
+    {
+      id: "ai-edit",
+      title: commandPaletteQuery.trim()
+        ? `AI edit: ${commandPaletteQuery.trim()}`
+        : "AI edit current figure",
+      subtitle: hasNodeSelection
+        ? "Use the current selection as context for a structured scene edit"
+        : selectedConnector
+          ? "Use the selected connector as context for a structured scene edit"
+          : "Describe how the current figure should change",
+      keywords: "ai edit revise restructure clarify declutter",
+      run: () => {
+        const prompt = commandPaletteQuery.trim() || aiEditPrompt.trim();
+
+        if (!prompt) {
+          setNotice("Type an instruction first, then run AI edit");
+          return;
+        }
+
+        setAiEditPrompt(prompt);
+        closeCommandPalette();
+        editWithAi(prompt);
+      },
+    },
+    {
+      id: "ai-critique",
+      title: "AI critique current figure",
+      subtitle: "Review hierarchy, provenance, and caption quality",
+      keywords: "ai critique review caption provenance quality",
+      run: () => {
+        closeCommandPalette();
+        critiqueWithAi();
+      },
+    },
+    {
+      id: "add-callout",
+      title: "Add callout block",
+      subtitle: "Insert a publication-style explanatory card",
+      keywords: "annotation callout note",
+      run: () => {
+        closeCommandPalette();
+        addAnnotationBlock("callout");
+      },
+    },
+    {
+      id: "add-legend",
+      title: "Add legend block",
+      subtitle: "Insert a compact legend with swatches and labels",
+      keywords: "legend annotation key",
+      run: () => {
+        closeCommandPalette();
+        addAnnotationBlock("legend");
+      },
+    },
+    {
+      id: "add-comment",
+      title: hasNodeSelection ? "Comment on selection" : "Add board review note",
+      subtitle: hasNodeSelection
+        ? "Pin a local review note to the current selection"
+        : "Add a pinned review note to the board",
+      keywords: "comment review note feedback",
+      run: () => {
+        closeCommandPalette();
+        if (hasNodeSelection) {
+          addCommentOnSelection();
+        } else {
+          addBoardComment();
+        }
+      },
+    },
+    {
+      id: "save-snapshot",
+      title: "Save snapshot",
+      subtitle: "Create a local checkpoint before a major revision",
+      keywords: "snapshot checkpoint history save",
+      run: () => {
+        closeCommandPalette();
+        saveProjectSnapshot();
+      },
+    },
+    {
+      id: "branch-current-figure",
+      title: "Branch current figure",
+      subtitle: "Fork the current figure into a new local workspace",
+      keywords: "branch duplicate variant workspace",
+      run: () => {
+        closeCommandPalette();
+        branchFromCurrentProject();
+      },
+    },
+    {
+      id: "save-component",
+      title: "Save selection as component",
+      subtitle: "Turn the current motif into a reusable snippet",
+      keywords: "component motif reusable selection",
+      run: () => {
+        closeCommandPalette();
+        saveSelectionAsReusableComponent();
+      },
+    },
+    {
+      id: "insert-2x2-panels",
+      title: "Insert 2 x 2 panel layout",
+      subtitle: "Drop a manuscript-style 4-panel frame on the board",
+      keywords: "panel layout 2x2 figure grid",
+      run: () => {
+        closeCommandPalette();
+        insertPanelLayout("panels-2x2");
+      },
+    },
+    ...(projectSnapshots[0]
+      ? [
+          {
+            id: "compare-latest-snapshot",
+            title: "Compare to latest snapshot",
+            subtitle: `Review changes against ${projectSnapshots[0].label}`,
+            keywords: "snapshot compare diff history branch",
+            run: () => {
+              setCompareSnapshotId(projectSnapshots[0].id);
+              closeCommandPalette();
+              setNotice(`Comparing against ${projectSnapshots[0].label}`);
+            },
+          },
+        ]
+      : []),
+    ...(installPromptEvent
+      ? [
+          {
+            id: "install-helixcanvas",
+            title: "Install HelixCanvas",
+            subtitle: "Open the browser install prompt for offline app use",
+            keywords: "install offline pwa app desktop",
+            run: () => {
+              closeCommandPalette();
+              promptInstallApp();
+            },
+          },
+        ]
+      : []),
+    ...DOMAIN_STARTER_KITS.map((starterKit) => ({
+      id: `starter-kit-${starterKit.id}`,
+      title: `Load starter kit: ${starterKit.title}`,
+      subtitle: starterKit.description,
+      keywords: `${starterKit.tags.join(" ")} starter kit template domain`,
+      run: () => {
+        closeCommandPalette();
+        applyStarterKit(starterKit);
+      },
+    })),
+  ];
+  const paletteQuery = commandPaletteQuery.trim().toLowerCase();
+  const visiblePaletteCommands = rawPaletteCommands.filter((command, index) => {
+    if (index === 0) {
+      return true;
+    }
+
+    if (!paletteQuery) {
+      return true;
+    }
+
+    const searchableText = `${command.title} ${command.subtitle} ${command.keywords}`.toLowerCase();
+    return searchableText.includes(paletteQuery);
+  });
+  const activePaletteIndex = Math.min(commandPaletteIndex, Math.max(visiblePaletteCommands.length - 1, 0));
 
   return (
     <div className="app-shell">
@@ -2846,8 +3612,28 @@ function App() {
         <div>
           <span className="eyebrow">AI-native biomedical figure studio</span>
           <h1>HelixCanvas</h1>
+          <div className="topbar__meta">
+            <span className={`status-pill ${online ? "is-online" : "is-offline"}`}>
+              {online ? "Online" : "Offline"}
+            </span>
+            <span className="status-pill">Local-first</span>
+            {installPromptEvent ? <span className="status-pill">Install available</span> : null}
+          </div>
         </div>
         <div className="topbar__actions">
+          <button type="button" className="ghost-button" onClick={() => openCommandPalette(aiEditPrompt)}>
+            Command palette
+          </button>
+          {installPromptEvent ? (
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={promptInstallApp}
+              disabled={installBusy}
+            >
+              {installBusy ? "Opening install..." : "Install app"}
+            </button>
+          ) : null}
           <button type="button" className="ghost-button" onClick={requestProjectOpen}>
             Open project
           </button>
@@ -2921,6 +3707,7 @@ function App() {
             <div className="library-summary">
               <span>{hasUnsavedChanges ? "Unsaved changes" : "Save state clean"}</span>
               <span>{savedProjectUpdatedAt ? "Manual save tracked" : "Not saved yet"}</span>
+              <span>{online ? "Online sync lane open" : "Offline-ready workspace"}</span>
             </div>
             <div className="stack-row">
               <button type="button" className="secondary-button" onClick={() => saveProjectFile()}>
@@ -2934,6 +3721,9 @@ function App() {
               </button>
               <button type="button" className="ghost-button" onClick={exportProjectJson}>
                 Download copy
+              </button>
+              <button type="button" className="ghost-button" onClick={branchFromCurrentProject}>
+                Branch
               </button>
             </div>
             {recoveryDraft?.project ? (
@@ -2989,6 +3779,141 @@ function App() {
                 Save snapshot
               </button>
             </div>
+            <div className="inspector-grid">
+              <label>
+                Compare current figure to
+                <select
+                  value={compareSnapshotId}
+                  onChange={(event) => setCompareSnapshotId(event.target.value)}
+                >
+                  <option value="">No comparison baseline</option>
+                  {projectSnapshots.map((snapshot) => (
+                    <option key={snapshot.id} value={snapshot.id}>
+                      {snapshot.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="toggle-field">
+                Figure branch
+                <button type="button" className="ghost-button" onClick={branchFromCurrentProject}>
+                  Branch current figure
+                </button>
+              </label>
+            </div>
+            {snapshotComparison && compareSnapshot ? (
+              <article className="comparison-card">
+                <div className="comparison-card__head">
+                  <div>
+                    <strong>Compared to {compareSnapshot.label}</strong>
+                    <p>{new Date(compareSnapshot.createdAt).toLocaleString()}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => setCompareSnapshotId("")}
+                  >
+                    Clear
+                  </button>
+                </div>
+                <div className="comparison-grid">
+                  <article>
+                    <strong>
+                      {snapshotComparison.counts.current.nodes} / {snapshotComparison.counts.baseline.nodes}
+                    </strong>
+                    <span>Nodes now / baseline</span>
+                  </article>
+                  <article>
+                    <strong>
+                      {snapshotComparison.counts.current.connectors} / {snapshotComparison.counts.baseline.connectors}
+                    </strong>
+                    <span>Connectors now / baseline</span>
+                  </article>
+                  <article>
+                    <strong>
+                      {snapshotComparison.counts.current.comments} / {snapshotComparison.counts.baseline.comments}
+                    </strong>
+                    <span>Comments now / baseline</span>
+                  </article>
+                </div>
+                {snapshotComparison.changedNodes.length ? (
+                  <div className="comparison-card__section">
+                    <strong>Changed layers</strong>
+                    <div className="ai-pill-row">
+                      {snapshotComparison.changedNodes.map((item) => (
+                        <span key={item} className="ai-pill">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {snapshotComparison.addedNodes.length ? (
+                  <div className="comparison-card__section">
+                    <strong>Added layers</strong>
+                    <div className="ai-pill-row">
+                      {snapshotComparison.addedNodes.map((item) => (
+                        <span key={item} className="ai-pill">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {snapshotComparison.removedNodes.length ? (
+                  <div className="comparison-card__section">
+                    <strong>Removed layers</strong>
+                    <div className="ai-pill-row">
+                      {snapshotComparison.removedNodes.map((item) => (
+                        <span key={item} className="ai-pill">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {snapshotComparison.changedConnectors.length ? (
+                  <div className="comparison-card__section">
+                    <strong>Connector changes</strong>
+                    <div className="ai-pill-row">
+                      {snapshotComparison.changedConnectors.map((item) => (
+                        <span key={item} className="ai-pill">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {snapshotComparison.addedComments.length ? (
+                  <div className="comparison-card__section">
+                    <strong>New review notes</strong>
+                    <div className="ai-list">
+                      {snapshotComparison.addedComments.map((item) => (
+                        <div key={item} className="ai-list__item">
+                          {item}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                <div className="stack-row">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => branchFromSnapshot(compareSnapshot)}
+                  >
+                    Branch from baseline
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => restoreProjectSnapshot(compareSnapshot)}
+                  >
+                    Restore baseline
+                  </button>
+                </div>
+              </article>
+            ) : null}
             <div className="snapshot-list">
               {projectSnapshots.length ? (
                 projectSnapshots.map((snapshot) => (
@@ -3004,10 +3929,26 @@ function App() {
                     <div className="stack-row">
                       <button
                         type="button"
+                        className={compareSnapshotId === snapshot.id ? "secondary-button" : "ghost-button"}
+                        onClick={() =>
+                          setCompareSnapshotId((current) => (current === snapshot.id ? "" : snapshot.id))
+                        }
+                      >
+                        {compareSnapshotId === snapshot.id ? "Comparing" : "Compare"}
+                      </button>
+                      <button
+                        type="button"
                         className="secondary-button"
                         onClick={() => restoreProjectSnapshot(snapshot)}
                       >
                         Restore
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => branchFromSnapshot(snapshot)}
+                      >
+                        Branch
                       </button>
                       <button
                         type="button"
@@ -3147,6 +4088,32 @@ function App() {
 
           <div className="panel">
             <div className="panel__head">
+              <h3>Domain starter kits</h3>
+              <span>{DOMAIN_STARTER_KITS.length} personal workflows</span>
+            </div>
+            <p className="helper-copy">
+              Jump into real scientific figure archetypes with tuned templates, semantic library focus, and a brief that already speaks the language of the problem.
+            </p>
+            <div className="example-list">
+              {DOMAIN_STARTER_KITS.map((starterKit) => (
+                <StarterKitCard
+                  key={starterKit.id}
+                  starterKit={starterKit}
+                  example={
+                    starterKit.exampleId
+                      ? EXAMPLE_PROJECTS.find((item) => item.id === starterKit.exampleId) ?? null
+                      : null
+                  }
+                  onApply={applyStarterKit}
+                  onFocusLibrary={focusStarterKit}
+                  onLoadExample={loadStarterKitExample}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel__head">
               <h3>Real-world examples</h3>
               <span>{EXAMPLE_PROJECTS.length} guided figures</span>
             </div>
@@ -3206,6 +4173,32 @@ function App() {
                 Reset
               </button>
             </div>
+            <label>
+              Edit current figure
+              <input
+                className="text-input"
+                value={aiEditPrompt}
+                onChange={(event) => setAiEditPrompt(event.target.value)}
+                placeholder="Make the pathway clearer, tighten the labels, and mark inhibition explicitly"
+              />
+            </label>
+            <div className="stack-row">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => editWithAi()}
+                disabled={aiBusy.editing}
+              >
+                {aiBusy.editing ? "Editing..." : "AI edit figure"}
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => openCommandPalette(aiEditPrompt)}
+              >
+                Open command palette
+              </button>
+            </div>
             {aiPlan ? (
               <div className="ai-summary">
                 <div className="panel__head">
@@ -3231,6 +4224,33 @@ function App() {
                   ))}
                 </div>
                 <p className="helper-copy">Next step: {aiPlan.nextStep}</p>
+              </div>
+            ) : null}
+            {aiEditResult ? (
+              <div className="ai-summary">
+                <div className="panel__head">
+                  <h4>AI edit result</h4>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => copyTextValue(aiEditResult.followUp, "Copied AI follow-up note")}
+                  >
+                    Copy follow-up
+                  </button>
+                </div>
+                <p>{aiEditResult.summary}</p>
+                <div className="ai-pill-row">
+                  <span className="ai-pill">{aiEditResult.actions.length} actions</span>
+                  <span className="ai-pill">{aiEditResult.confidence}</span>
+                </div>
+                <div className="ai-list">
+                  {aiEditResult.actions.map((action, index) => (
+                    <div key={`${action.actionType}-${index}`} className="ai-list__item">
+                      {action.actionType.replaceAll("_", " ")}
+                    </div>
+                  ))}
+                </div>
+                <p className="helper-copy">Next step: {aiEditResult.followUp}</p>
               </div>
             ) : null}
           </div>
@@ -3352,7 +4372,13 @@ function App() {
               <span>{favoriteAssetIds.length} saved</span>
               <span>{recentAssetIds.length} recent</span>
               <span>{usedAssetIds.length} on canvas</span>
+              <span>{filteredLibrary.length} matching current focus</span>
             </div>
+            {deferredQuery ? (
+              <p className="helper-copy">
+                Semantic retrieval expands biomedical aliases, so queries like <code>microscopy</code>, <code>macrophage</code>, or <code>complement</code> surface related assets even when the exact word is missing from the title.
+              </p>
+            ) : null}
             <AssetShelf title="Saved assets" assets={favoriteAssets} onAdd={addAssetToCanvas} />
             <AssetShelf title="Recent assets" assets={recentAssets} onAdd={addAssetToCanvas} />
             <div className="asset-grid">
@@ -3477,6 +4503,13 @@ function App() {
                 <button type="button" className="ghost-button" onClick={addConnector}>
                   Add connector
                 </button>
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={() => openCommandPalette(aiEditPrompt)}
+                >
+                  Command palette
+                </button>
               </div>
             </div>
             <div className="studio-toolbar__footer">
@@ -3498,6 +4531,7 @@ function App() {
                 <span>Cmd/Ctrl+G group</span>
                 <span>Shift+click multi-select</span>
                 <span>Comments stay out of exports</span>
+                <span>Text and connectors have richer controls</span>
                 <span>Save selections as components</span>
                 <span>Grouped layers move together</span>
                 <span>Shift+arrows coarse nudge</span>
@@ -3535,36 +4569,72 @@ function App() {
                   className="connector-layer"
                   viewBox={`0 0 ${project.board.width} ${project.board.height}`}
                 >
-                  <defs>
-                    <marker
-                      id="arrowhead-live"
-                      markerWidth="12"
-                      markerHeight="12"
-                      refX="10"
-                      refY="6"
-                      orient="auto"
-                    >
-                      <path d="M0,0 L12,6 L0,12 z" fill="#155e75" />
-                    </marker>
-                  </defs>
                   {project.connectors.map((connector) => {
                     const isSelected = selection?.kind === "connector" && selection.id === connector.id;
+                    const geometry = buildConnectorGeometry(connector);
+                    const arrowHead =
+                      connector.kind === "activation"
+                        ? buildConnectorArrowHead(geometry.endSegment)
+                        : null;
+                    const inhibitionBar =
+                      connector.kind === "inhibition"
+                        ? buildConnectorInhibitionBar(geometry.endSegment)
+                        : null;
                     return (
                       <g key={connector.id}>
-                        <line
-                          x1={connector.from.x}
-                          y1={connector.from.y}
-                          x2={connector.to.x}
-                          y2={connector.to.y}
-                          stroke={connector.stroke}
-                          strokeWidth={connector.strokeWidth}
-                          markerEnd="url(#arrowhead-live)"
+                        <path
+                          d={geometry.path}
+                          fill="none"
+                          stroke="transparent"
+                          strokeWidth={Math.max(18, connector.strokeWidth + 12)}
                           strokeLinecap="round"
+                          strokeLinejoin="round"
                           onPointerDown={(event) => {
                             event.stopPropagation();
                             setSelection({ kind: "connector", id: connector.id });
                           }}
                         />
+                        <path
+                          d={geometry.path}
+                          fill="none"
+                          stroke={connector.stroke}
+                          strokeWidth={connector.strokeWidth}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          pointerEvents="none"
+                        />
+                        {arrowHead ? (
+                          <polygon points={arrowHead} fill={connector.stroke} pointerEvents="none" />
+                        ) : null}
+                        {inhibitionBar ? (
+                          <line
+                            x1={inhibitionBar.x1}
+                            y1={inhibitionBar.y1}
+                            x2={inhibitionBar.x2}
+                            y2={inhibitionBar.y2}
+                            stroke={connector.stroke}
+                            strokeWidth={Math.max(3, connector.strokeWidth - 0.5)}
+                            strokeLinecap="round"
+                            pointerEvents="none"
+                          />
+                        ) : null}
+                        {connector.label ? (
+                          <text
+                            x={geometry.label.x}
+                            y={geometry.label.y}
+                            textAnchor="middle"
+                            fontSize="13"
+                            fontWeight="700"
+                            fontFamily={getFontFamilyStack("grotesk")}
+                            fill={connector.stroke}
+                            stroke="#ffffff"
+                            strokeWidth="4"
+                            paintOrder="stroke"
+                            pointerEvents="none"
+                          >
+                            {connector.label}
+                          </text>
+                        ) : null}
                         {isSelected ? (
                           <>
                             <circle
@@ -3661,6 +4731,9 @@ function App() {
                           color: node.color,
                           fontSize: node.fontSize,
                           fontWeight: node.fontWeight,
+                          fontFamily: getFontFamilyStack(node.fontFamily),
+                          lineHeight: node.lineHeight,
+                          textAlign: node.textAlign,
                         }}
                         onPointerDown={(event) => handleNodePointerDown(node, event)}
                       >
@@ -3938,23 +5011,49 @@ function App() {
                 )}
 
                 <fieldset className="inspector-fieldset" disabled={selectedNode.locked}>
-                  <label>
-                    Title
-                    <input
-                      className="text-input"
-                      value={selectedNode.title ?? selectedNode.text ?? ""}
-                      onChange={(event) =>
-                        updateSelectedNode(
-                          selectedNode.type === "text"
-                            ? { text: event.target.value }
-                            : { title: event.target.value },
-                        )
-                      }
-                    />
-                  </label>
-
                   {selectedNode.type === "text" ? (
                     <>
+                      <label>
+                        Text
+                        <textarea
+                          value={selectedNode.text ?? ""}
+                          onChange={(event) =>
+                            updateSelectedNode({ text: event.target.value })
+                          }
+                        />
+                      </label>
+                      <div className="inspector-grid">
+                        <label>
+                          Font
+                          <select
+                            value={selectedNode.fontFamily ?? "sans"}
+                            onChange={(event) =>
+                              updateSelectedNode({ fontFamily: event.target.value })
+                            }
+                          >
+                            {FONT_FAMILIES.map((fontFamily) => (
+                              <option key={fontFamily.id} value={fontFamily.id}>
+                                {fontFamily.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          Align
+                          <select
+                            value={selectedNode.textAlign ?? "left"}
+                            onChange={(event) =>
+                              updateSelectedNode({ textAlign: event.target.value })
+                            }
+                          >
+                            {TEXT_ALIGN_OPTIONS.map((option) => (
+                              <option key={option.id} value={option.id}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
                       <label>
                         Font size
                         <input
@@ -3968,6 +5067,32 @@ function App() {
                         />
                       </label>
                       <label>
+                        Weight
+                        <input
+                          type="range"
+                          min="400"
+                          max="800"
+                          step="100"
+                          value={selectedNode.fontWeight ?? 600}
+                          onChange={(event) =>
+                            updateSelectedNode({ fontWeight: Number(event.target.value) })
+                          }
+                        />
+                      </label>
+                      <label>
+                        Line height
+                        <input
+                          type="range"
+                          min="1"
+                          max="1.8"
+                          step="0.05"
+                          value={selectedNode.lineHeight ?? 1.3}
+                          onChange={(event) =>
+                            updateSelectedNode({ lineHeight: Number(event.target.value) })
+                          }
+                        />
+                      </label>
+                      <label>
                         Color
                         <input
                           className="color-input"
@@ -3977,7 +5102,16 @@ function App() {
                         />
                       </label>
                     </>
-                  ) : null}
+                  ) : (
+                    <label>
+                      Title
+                      <input
+                        className="text-input"
+                        value={selectedNode.title ?? selectedNode.text ?? ""}
+                        onChange={(event) => updateSelectedNode({ title: event.target.value })}
+                      />
+                    </label>
+                  )}
 
                   {selectedNode.type === "shape" ? (
                     <>
@@ -4160,6 +5294,49 @@ function App() {
 
             {selectedConnector ? (
               <div className="inspector-stack">
+                <label>
+                  Label
+                  <input
+                    className="text-input"
+                    value={selectedConnector.label ?? ""}
+                    onChange={(event) =>
+                      updateSelectedConnector({ label: event.target.value })
+                    }
+                    placeholder="Optional interaction label"
+                  />
+                </label>
+                <div className="inspector-grid">
+                  <label>
+                    Meaning
+                    <select
+                      value={selectedConnector.kind ?? "activation"}
+                      onChange={(event) =>
+                        updateSelectedConnector({ kind: event.target.value })
+                      }
+                    >
+                      {CONNECTOR_KIND_OPTIONS.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Route
+                    <select
+                      value={selectedConnector.route ?? "straight"}
+                      onChange={(event) =>
+                        updateSelectedConnector({ route: event.target.value })
+                      }
+                    >
+                      {CONNECTOR_ROUTE_OPTIONS.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
                 <div className="inspector-grid">
                   <label>
                     Start X
@@ -4251,6 +5428,13 @@ function App() {
                 </label>
                 <p className="helper-copy">
                   Connector length: {Math.round(getHandleDistance(selectedConnector.from, selectedConnector.to))} px
+                  {" · "}
+                  {selectedConnector.kind === "activation"
+                    ? "activates"
+                    : selectedConnector.kind === "inhibition"
+                      ? "inhibits"
+                      : "links"}{" "}
+                  via a {selectedConnector.route ?? "straight"} route.
                 </p>
               </div>
             ) : null}
@@ -4523,6 +5707,64 @@ function App() {
           </div>
         </aside>
       </section>
+
+      {commandPaletteOpen ? (
+        <div className="command-palette-shell" onClick={closeCommandPalette}>
+          <div className="command-palette" onClick={(event) => event.stopPropagation()}>
+            <div className="command-palette__head">
+              <strong>Command palette</strong>
+              <span>Cmd/Ctrl+K</span>
+            </div>
+            <input
+              ref={commandPaletteInputRef}
+              className="text-input"
+              value={commandPaletteQuery}
+              onChange={(event) => {
+                setCommandPaletteQuery(event.target.value);
+                setCommandPaletteIndex(0);
+              }}
+              placeholder="Type a command or an AI edit instruction"
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setCommandPaletteIndex((index) =>
+                    Math.min(index + 1, Math.max(visiblePaletteCommands.length - 1, 0)),
+                  );
+                }
+
+                if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setCommandPaletteIndex((index) => Math.max(index - 1, 0));
+                }
+
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  visiblePaletteCommands[activePaletteIndex]?.run();
+                }
+
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  closeCommandPalette();
+                }
+              }}
+            />
+            <div className="command-palette__list">
+              {visiblePaletteCommands.map((command, index) => (
+                <button
+                  key={command.id}
+                  type="button"
+                  className={`command-palette__item ${index === activePaletteIndex ? "is-active" : ""}`}
+                  onMouseEnter={() => setCommandPaletteIndex(index)}
+                  onClick={command.run}
+                >
+                  <strong>{command.title}</strong>
+                  <span>{command.subtitle}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {notice ? <div className="toast">{notice}</div> : null}
     </div>

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
-import { createFigurePlan, critiqueFigureProject, getAiConfig } from "./aiService.mjs";
+import { createFigurePlan, critiqueFigureProject, editFigureProject, getAiConfig } from "./aiService.mjs";
 
 const app = express();
 const port = Number(process.env.HELIXCANVAS_API_PORT || 8787);
@@ -78,6 +78,45 @@ app.post("/api/ai/critique", async (req, res) => {
 
     res.json({
       critique,
+      model: getAiConfig().model,
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+app.post("/api/ai/edit", async (req, res) => {
+  try {
+    const instruction =
+      typeof req.body?.instruction === "string" ? req.body.instruction.trim() : "";
+    const currentProject = req.body?.currentProject ?? null;
+
+    if (!instruction) {
+      sendError(res, new Error("An edit instruction is required for AI editing."), 400);
+      return;
+    }
+
+    if (!currentProject) {
+      sendError(res, new Error("A current project context is required for AI editing."), 400);
+      return;
+    }
+
+    if (!getAiConfig().configured) {
+      sendError(
+        res,
+        new Error("OPENAI_API_KEY is missing. Configure the server environment to enable AI editing."),
+        503,
+      );
+      return;
+    }
+
+    const edit = await editFigureProject({
+      instruction,
+      currentProject,
+    });
+
+    res.json({
+      edit,
       model: getAiConfig().model,
     });
   } catch (error) {
