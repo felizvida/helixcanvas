@@ -20,7 +20,10 @@ test("compareProjects reports changed, added, and removed scene items", () => {
           label: "blocks",
         },
       ],
-      comments: [{ id: "comment-a", body: "Clarify the timing" }],
+      comments: [
+        { id: "comment-a", body: "Clarify the timing", status: "open" },
+        { id: "comment-b", body: "Legend approved", status: "resolved" },
+      ],
     },
     {
       nodes: [
@@ -37,7 +40,7 @@ test("compareProjects reports changed, added, and removed scene items", () => {
           label: "",
         },
       ],
-      comments: [],
+      comments: [{ id: "comment-b", body: "Legend approved", status: "open" }],
     },
   );
 
@@ -51,4 +54,6 @@ test("compareProjects reports changed, added, and removed scene items", () => {
   assert.deepEqual(summary.removedNodes, ["Old card"]);
   assert.deepEqual(summary.changedConnectors, ["blocks"]);
   assert.deepEqual(summary.addedComments, ["Clarify the timing"]);
+  assert.deepEqual(summary.resolvedComments, ["Legend approved"]);
+  assert.match(summary.narrative, /changed/);
 });

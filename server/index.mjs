@@ -4,136 +4,189 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import { createFigurePlan, critiqueFigureProject, editFigureProject, getAiConfig } from "./aiService.mjs";
 
-const app = express();
-const port = Number(process.env.HELIXCANVAS_API_PORT || 8787);
-const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const distDir = path.join(rootDir, "dist");
-
-app.disable("x-powered-by");
-app.use(express.json({ limit: "1mb" }));
+const defaultHost = process.env.HELIXCANVAS_API_HOST || "127.0.0.1";
+const defaultPort = Number(process.env.HELIXCANVAS_API_PORT || 8787);
+const defaultRootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function sendError(res, error, status = 500) {
   const message = error instanceof Error ? error.message : "Unexpected server error.";
   res.status(status).json({ error: message });
 }
 
-app.get("/api/ai/health", (_req, res) => {
-  res.json(getAiConfig());
-});
+export function createHelixCanvasApp({ rootDir = defaultRootDir } = {}) {
+  const app = express();
+  const distDir = path.join(rootDir, "dist");
 
-app.post("/api/ai/plan", async (req, res) => {
-  try {
-    const brief = typeof req.body?.brief === "string" ? req.body.brief.trim() : "";
+  app.disable("x-powered-by");
+  app.use(express.json({ limit: "1mb" }));
 
-    if (!brief) {
-      sendError(res, new Error("A research brief is required for AI drafting."), 400);
-      return;
+  app.get("/api/ai/health", (_req, res) => {
+    res.json(getAiConfig());
+  });
+
+  app.post("/api/ai/plan", async (req, res) => {
+    try {
+      const brief = typeof req.body?.brief === "string" ? req.body.brief.trim() : "";
+
+      if (!brief) {
+        sendError(res, new Error("A research brief is required for AI drafting."), 400);
+        return;
+      }
+
+      if (!getAiConfig().configured) {
+        sendError(
+          res,
+          new Error("OPENAI_API_KEY is missing. Configure the server environment to enable AI drafting."),
+          503,
+        );
+        return;
+      }
+
+      const plan = await createFigurePlan({
+        brief,
+        currentProject: req.body?.currentProject ?? null,
+      });
+
+      res.json({
+        plan,
+        model: getAiConfig().model,
+      });
+    } catch (error) {
+      sendError(res, error);
     }
+  });
 
-    if (!getAiConfig().configured) {
-      sendError(
-        res,
-        new Error("OPENAI_API_KEY is missing. Configure the server environment to enable AI drafting."),
-        503,
-      );
-      return;
+  app.post("/api/ai/critique", async (req, res) => {
+    try {
+      const currentProject = req.body?.currentProject ?? null;
+
+      if (!currentProject) {
+        sendError(res, new Error("A current project summary is required for AI critique."), 400);
+        return;
+      }
+
+      if (!getAiConfig().configured) {
+        sendError(
+          res,
+          new Error("OPENAI_API_KEY is missing. Configure the server environment to enable AI critique."),
+          503,
+        );
+        return;
+      }
+
+      const critique = await critiqueFigureProject({
+        brief: typeof req.body?.brief === "string" ? req.body.brief : "",
+        currentProject,
+      });
+
+      res.json({
+        critique,
+        model: getAiConfig().model,
+      });
+    } catch (error) {
+      sendError(res, error);
     }
+  });
 
-    const plan = await createFigurePlan({
-      brief,
-      currentProject: req.body?.currentProject ?? null,
-    });
+  app.post("/api/ai/edit", async (req, res) => {
+    try {
+      const instruction =
+        typeof req.body?.instruction === "string" ? req.body.instruction.trim() : "";
+      const currentProject = req.body?.currentProject ?? null;
 
-    res.json({
-      plan,
-      model: getAiConfig().model,
+      if (!instruction) {
+        sendError(res, new Error("An edit instruction is required for AI editing."), 400);
+        return;
+      }
+
+      if (!currentProject) {
+        sendError(res, new Error("A current project context is required for AI editing."), 400);
+        return;
+      }
+
+      if (!getAiConfig().configured) {
+        sendError(
+          res,
+          new Error("OPENAI_API_KEY is missing. Configure the server environment to enable AI editing."),
+          503,
+        );
+        return;
+      }
+
+      const edit = await editFigureProject({
+        instruction,
+        currentProject,
+      });
+
+      res.json({
+        edit,
+        model: getAiConfig().model,
+      });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  if (fs.existsSync(distDir)) {
+    app.use(express.static(distDir));
+    app.get(/^(?!\/api).*/, (_req, res) => {
+      res.sendFile(path.join(distDir, "index.html"));
     });
-  } catch (error) {
-    sendError(res, error);
   }
-});
 
-app.post("/api/ai/critique", async (req, res) => {
-  try {
-    const currentProject = req.body?.currentProject ?? null;
+  return app;
+}
 
-    if (!currentProject) {
-      sendError(res, new Error("A current project summary is required for AI critique."), 400);
-      return;
-    }
+export function startHelixCanvasServer({
+  host = defaultHost,
+  port = defaultPort,
+  rootDir = defaultRootDir,
+} = {}) {
+  const app = createHelixCanvasApp({ rootDir });
 
-    if (!getAiConfig().configured) {
-      sendError(
-        res,
-        new Error("OPENAI_API_KEY is missing. Configure the server environment to enable AI critique."),
-        503,
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const server = app.listen(port, host, () => {
+      if (settled) {
+        return;
+      }
+
+      const address = server.address();
+
+      if (!address || typeof address !== "object") {
+        settled = true;
+        reject(new Error("HelixCanvas server did not report a listening address."));
+        return;
+      }
+
+      const config = getAiConfig();
+      const resolvedPort = address.port;
+
+      settled = true;
+      console.log(
+        `[helixcanvas] api listening on http://${host}:${resolvedPort} (model: ${config.model}, configured: ${config.configured})`,
       );
-      return;
-    }
-
-    const critique = await critiqueFigureProject({
-      brief: typeof req.body?.brief === "string" ? req.body.brief : "",
-      currentProject,
+      resolve(server);
     });
 
-    res.json({
-      critique,
-      model: getAiConfig().model,
+    server.on("error", (error) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      reject(error);
     });
-  } catch (error) {
-    sendError(res, error);
-  }
-});
-
-app.post("/api/ai/edit", async (req, res) => {
-  try {
-    const instruction =
-      typeof req.body?.instruction === "string" ? req.body.instruction.trim() : "";
-    const currentProject = req.body?.currentProject ?? null;
-
-    if (!instruction) {
-      sendError(res, new Error("An edit instruction is required for AI editing."), 400);
-      return;
-    }
-
-    if (!currentProject) {
-      sendError(res, new Error("A current project context is required for AI editing."), 400);
-      return;
-    }
-
-    if (!getAiConfig().configured) {
-      sendError(
-        res,
-        new Error("OPENAI_API_KEY is missing. Configure the server environment to enable AI editing."),
-        503,
-      );
-      return;
-    }
-
-    const edit = await editFigureProject({
-      instruction,
-      currentProject,
-    });
-
-    res.json({
-      edit,
-      model: getAiConfig().model,
-    });
-  } catch (error) {
-    sendError(res, error);
-  }
-});
-
-if (fs.existsSync(distDir)) {
-  app.use(express.static(distDir));
-  app.get(/^(?!\/api).*/, (_req, res) => {
-    res.sendFile(path.join(distDir, "index.html"));
   });
 }
 
-app.listen(port, () => {
-  const config = getAiConfig();
-  console.log(
-    `[helixcanvas] api listening on http://127.0.0.1:${port} (model: ${config.model}, configured: ${config.configured})`,
-  );
-});
+const executedPath = process.argv[1] ? path.resolve(process.argv[1]) : null;
+const currentFilePath = fileURLToPath(import.meta.url);
+
+if (executedPath === currentFilePath) {
+  startHelixCanvasServer().catch((error) => {
+    console.error("[helixcanvas] failed to start server", error);
+    process.exitCode = 1;
+  });
+}

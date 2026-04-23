@@ -1,16 +1,17 @@
-const CACHE_NAME = "helixcanvas-app-v1";
+const SCOPE_URL = new URL("./", self.location.href);
+const OFFLINE_URL = new URL("offline.html", SCOPE_URL).toString();
 const APP_SHELL = [
-  "/",
-  "/offline.html",
-  "/manifest.webmanifest",
-  "/icon.svg",
-  "/data/library.packs.json",
-  "/data/library.stats.json",
+  new URL(".", SCOPE_URL).toString(),
+  OFFLINE_URL,
+  new URL("manifest.webmanifest", SCOPE_URL).toString(),
+  new URL("icon.svg", SCOPE_URL).toString(),
+  new URL("data/library.packs.json", SCOPE_URL).toString(),
+  new URL("data/library.stats.json", SCOPE_URL).toString(),
 ];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()),
+    caches.open("helixcanvas-app-v2").then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()),
   );
 });
 
@@ -19,7 +20,7 @@ self.addEventListener("activate", (event) => {
     caches.keys().then((keys) =>
       Promise.all(
         keys
-          .filter((key) => key !== CACHE_NAME)
+          .filter((key) => key !== "helixcanvas-app-v2")
           .map((key) => caches.delete(key)),
       ),
     ).then(() => self.clients.claim()),
@@ -35,7 +36,11 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
 
-  if (url.origin !== self.location.origin || url.pathname.startsWith("/api/")) {
+  if (url.origin !== self.location.origin) {
+    return;
+  }
+
+  if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
     return;
   }
 
@@ -43,13 +48,16 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const responseClone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone));
+          if (response && response.status === 200) {
+            const responseClone = response.clone();
+            caches.open("helixcanvas-app-v2").then((cache) => cache.put(request, responseClone));
+          }
+
           return response;
         })
         .catch(async () => {
           const cachedResponse = await caches.match(request);
-          return cachedResponse || caches.match("/offline.html");
+          return cachedResponse || caches.match(OFFLINE_URL);
         }),
     );
     return;
@@ -61,7 +69,7 @@ self.addEventListener("fetch", (event) => {
         .then((response) => {
           if (response && response.status === 200) {
             const responseClone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone));
+            caches.open("helixcanvas-app-v2").then((cache) => cache.put(request, responseClone));
           }
 
           return response;

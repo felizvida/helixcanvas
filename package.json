@@ -1,8 +1,10 @@
 {
   "name": "helixcanvas",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Open-source, local-first biomedical illustration studio for publication-ready figures built from Bioicons, Servier Medical Art, and provenance-aware imports.",
+  "author": "HelixCanvas contributors",
+  "license": "Apache-2.0",
   "keywords": [
     "open-source",
     "open-science",
@@ -23,6 +25,7 @@
   "bugs": {
     "url": "https://github.com/felizvida/helixcanvas/issues"
   },
+  "main": "desktop/main.cjs",
   "type": "module",
   "scripts": {
     "dev": "concurrently \"npm:api:dev\" \"vite\"",
@@ -34,7 +37,11 @@
     "build:tutorial": "node scripts/generate-tutorial-assets.mjs",
     "preview": "vite preview",
     "build:library": "node scripts/generate-bioicons-index.mjs",
-    "check": "npm run check:packs && npm run test && npm run build"
+    "build:desktop-icon": "bash scripts/build-desktop-icon.sh",
+    "check": "npm run check:packs && npm run test && npm run build",
+    "desktop:dev": "npm run build && electron .",
+    "desktop:dir": "npm run build && electron-builder --dir",
+    "desktop:dist": "npm run build && electron-builder"
   },
   "dependencies": {
     "concurrently": "^9.2.1",
@@ -45,6 +52,34 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^5.0.4",
+    "electron": "^41.3.0",
+    "electron-builder": "^26.8.1",
     "vite": "^7.1.7"
+  },
+  "build": {
+    "appId": "com.helixcanvas.desktop",
+    "productName": "HelixCanvas",
+    "directories": {
+      "output": "dist-desktop"
+    },
+    "files": [
+      "dist/**/*",
+      "desktop/**/*",
+      "server/**/*",
+      "public/**/*",
+      "package.json",
+      "LICENSE"
+    ],
+    "extraMetadata": {
+      "main": "desktop/main.cjs"
+    },
+    "mac": {
+      "category": "public.app-category.graphics-design",
+      "icon": "desktop/icons/icon.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    }
   }
 }

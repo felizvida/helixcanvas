@@ -6,7 +6,9 @@ import "./styles.css";
 if (typeof window !== "undefined" && "serviceWorker" in navigator) {
   if (import.meta.env.PROD) {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
+      const baseUrl = import.meta.env.BASE_URL || "/";
+      const serviceWorkerUrl = new URL("sw.js", `${window.location.origin}${baseUrl}`).toString();
+      navigator.serviceWorker.register(serviceWorkerUrl, { scope: baseUrl }).catch(() => {});
     });
   } else {
     navigator.serviceWorker.getRegistrations().then((registrations) => {

@@ -207,6 +207,10 @@ code {
   line-height: 1.55;
 }
 
+.helper-copy--warning {
+  color: #a64a2e;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -496,6 +500,7 @@ button:disabled {
 .pack-card,
 .example-card,
 .kit-card,
+.figure-flow-form,
 .layout-preset-card,
 .snapshot-card,
 .comment-card,
@@ -554,6 +559,19 @@ button:disabled {
   border: 1px solid rgba(17, 33, 46, 0.08);
   padding: 10px 12px;
   font-size: 0.92rem;
+}
+
+.related-searches {
+  margin: 14px 0;
+}
+
+.related-searches strong {
+  display: block;
+  margin-bottom: 10px;
+}
+
+.related-search-chip {
+  border-radius: 999px;
 }
 
 .ai-suggestion__head,
@@ -726,6 +744,19 @@ button:disabled {
   color: var(--muted);
 }
 
+.theme-preview-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.theme-preview-row span {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(17, 33, 46, 0.08);
+}
+
 .asset-card__actions {
   display: flex;
   flex-wrap: wrap;
@@ -734,9 +765,43 @@ button:disabled {
 }
 
 .asset-card.is-active,
+.figure-flow-card.is-active,
 .layer-item.is-active {
   border-color: rgba(15, 118, 110, 0.34);
   box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.08);
+}
+
+.figure-flow-card {
+  text-align: left;
+}
+
+.figure-flow-form {
+  margin-top: 14px;
+}
+
+.figure-flow-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.builder-control-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.figure-flow-field,
+.figure-flow-field--full {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.figure-flow-field--full {
+  grid-column: 1 / -1;
 }
 
 .workspace__canvas {
@@ -1171,6 +1236,8 @@ button:disabled {
 
   .hero__stats,
   .inspector-grid,
+  .figure-flow-field-grid,
+  .builder-control-grid,
   .compliance-grid,
   .comparison-grid,
   .batch-action-grid {

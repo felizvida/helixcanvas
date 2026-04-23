@@ -54,19 +54,26 @@ That enables:
 
 ### Top slice now
 
+- one-click domain presets that bundle the right flow, theme, and scaffold together
+- starter-template entry points for concrete figure archetypes instead of only generic templates
+- guided Figure Flows for pathways, methods workflows, and microscopy panels
+- insertable scientific builders for membranes, compartments, assay strips, and timecourse layouts, with domain-aware variants and style presets
+- figure themes and smarter search follow-ups for faster refinement
+- export targets and review bundles that make handoff cleaner
 - richer text controls
 - stronger connector system
 - command palette and AI-native figure editing
 - snapshot compare and safe figure branching
 - semantic starter-kit workflows and offline-first app shell
+- desktop-grade macOS packaging with native project-file dialogs
 
 ### Next slices
 
-1. richer scientific builders for membranes, compartments, and assay blocks
-2. stronger starter templates and domain-specific figure presets
-3. more semantic retrieval coverage and pack discovery polish
-4. desktop-grade offline packaging beyond the installable web app
-5. compare/review UX refinement for iterative figure authorship
+1. more semantic retrieval coverage and pack discovery polish
+2. deepen compare/review workflows for iterative figure authorship
+3. expand desktop support beyond the current macOS packaging path
+4. more domain-specific figure recipes for additional biology problems
+5. publication-polish defaults for legends, annotations, and final export cleanup
 
 ## Design Rules
 

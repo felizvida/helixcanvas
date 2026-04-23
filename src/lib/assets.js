@@ -2,14 +2,22 @@ export const SEARCH_ALIASES = {
   microscopy: ["confocal", "microscope", "imaging", "staining"],
   confocal: ["microscopy", "imaging", "laser"],
   receptor: ["membrane receptor", "cell surface receptor", "kinase"],
+  membrane: ["plasma membrane", "cell surface", "receptor"],
+  ligand: ["growth factor", "cytokine", "protein ligand"],
   signaling: ["cascade", "pathway", "relay", "transduction"],
   pathway: ["signaling", "cascade", "mechanism"],
+  nucleus: ["nuclear", "transcription", "dna"],
+  transcription: ["nucleus", "dna", "gene expression"],
   macrophage: ["monocyte", "innate immune cell", "phagocyte"],
   monocyte: ["macrophage", "innate immune cell"],
   immunology: ["immune", "macrophage", "cytokine", "antibody"],
+  cytokine: ["immune signal", "ligand", "tnf", "interleukin"],
   retina: ["retinal", "photoreceptor", "eye", "neuron"],
   neuroscience: ["neuron", "retina", "glia", "synapse"],
   crispr: ["cas9", "editing", "knockout", "guide rna"],
+  assay: ["workflow", "readout", "perturbation", "protocol"],
+  timeline: ["timecourse", "time point", "pulse chase"],
+  timecourse: ["timeline", "treatment window", "kinetics"],
   pathology: ["disease", "degeneration", "injury", "stress"],
   complement: ["antibody", "immune tagging", "immune complex"],
 };
@@ -152,6 +160,34 @@ export function buildAiSuggestions(suggestions, library) {
       matches,
     };
   });
+}
+
+export function buildRelatedSearchQueries(query, limit = 6) {
+  const baseQuery = String(query ?? "").trim().toLowerCase();
+
+  if (!baseQuery) {
+    return [];
+  }
+
+  const rawTerms = baseQuery.split(/[^a-z0-9]+/i).filter(Boolean);
+  const aliasSuggestions = [];
+  const combinedSuggestions = [];
+
+  rawTerms.forEach((term) => {
+    const aliases = SEARCH_ALIASES[term] ?? [];
+
+    aliases.forEach((alias) => {
+      if (!aliasSuggestions.includes(alias)) {
+        aliasSuggestions.push(alias);
+      }
+      const suggestion = [baseQuery, alias].filter(Boolean).join(" ");
+      if (!combinedSuggestions.includes(suggestion)) {
+        combinedSuggestions.push(suggestion);
+      }
+    });
+  });
+
+  return [...aliasSuggestions, ...combinedSuggestions].slice(0, limit);
 }
 
 export function sortLibraryAssets(

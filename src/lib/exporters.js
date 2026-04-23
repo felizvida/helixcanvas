@@ -431,3 +431,60 @@ export function collectProjectCitations(project) {
 
   return citations.join("\n");
 }
+
+function summarizeOpenComments(project) {
+  return (project.comments ?? [])
+    .filter((comment) => comment.status !== "resolved")
+    .map((comment, index) => `- [ ] Comment ${index + 1} (${comment.author}): ${comment.body}`);
+}
+
+function summarizeResolvedComments(project) {
+  return (project.comments ?? [])
+    .filter((comment) => comment.status === "resolved")
+    .map((comment, index) => `- [x] Comment ${index + 1} (${comment.author}): ${comment.body}`);
+}
+
+export function buildReviewBundleText(project, options = {}) {
+  const comparison = options.comparison;
+  const citations = collectProjectCitations(project);
+  const exportPreset = options.exportPreset;
+  const openComments = summarizeOpenComments(project);
+  const resolvedComments = summarizeResolvedComments(project);
+
+  return [
+    `# ${project.name || "HelixCanvas figure"}`,
+    "",
+    project.brief ? project.brief : "No figure brief captured yet.",
+    "",
+    "## Figure Summary",
+    `- Board: ${project.board.width} x ${project.board.height}`,
+    `- Nodes: ${(project.nodes ?? []).filter((node) => !node.hidden).length}`,
+    `- Connectors: ${(project.connectors ?? []).length}`,
+    `- Comments: ${(project.comments ?? []).length}`,
+    exportPreset ? `- Export target: ${exportPreset.title}` : null,
+    "",
+    comparison
+      ? [
+          "## Snapshot Comparison",
+          comparison.narrative,
+          `- Changed layers: ${comparison.changedNodes.length}`,
+          `- Added layers: ${comparison.addedNodes.length}`,
+          `- Removed layers: ${comparison.removedNodes.length}`,
+          `- Connector changes: ${comparison.changedConnectors.length}`,
+          `- New review notes: ${comparison.addedComments.length}`,
+          comparison.resolvedComments?.length ? `- Resolved comments: ${comparison.resolvedComments.length}` : null,
+          "",
+        ]
+      : null,
+    "## Open Review Notes",
+    ...(openComments.length ? openComments : ["- No open review notes."]),
+    "",
+    resolvedComments.length ? "## Resolved Review Notes" : null,
+    ...(resolvedComments.length ? [...resolvedComments, ""] : []),
+    citations ? "## Citations" : null,
+    ...(citations ? [citations, ""] : []),
+  ]
+    .flat()
+    .filter((line) => line !== null && line !== undefined)
+    .join("\n");
+}

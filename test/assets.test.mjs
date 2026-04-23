@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   buildAiSuggestions,
+  buildRelatedSearchQueries,
   expandSearchTerms,
   getSearchMatchScore,
   isDuplicateImportedAsset,
@@ -145,4 +146,11 @@ test("matchesAssetSearchQuery uses semantic aliases instead of literal matches o
 
   assert.equal(matchesAssetSearchQuery(asset, "microscopy"), true);
   assert.ok(getSearchMatchScore(asset, "microscopy") >= 10);
+});
+
+test("buildRelatedSearchQueries suggests useful follow-up phrases for focused browsing", () => {
+  const queries = buildRelatedSearchQueries("membrane timeline");
+
+  assert.equal(queries.includes("plasma membrane"), true);
+  assert.equal(queries.includes("timecourse"), true);
 });

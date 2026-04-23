@@ -83,11 +83,48 @@ export function compareProjects(currentProject, baselineProject) {
   });
 
   const addedComments = [];
+  const resolvedComments = [];
+  const reopenedComments = [];
   currentComments.forEach((comment, id) => {
     if (!baselineComments.has(id)) {
       addedComments.push(comment.body);
+      return;
+    }
+
+    const baselineComment = baselineComments.get(id);
+
+    if (baselineComment.status !== "resolved" && comment.status === "resolved") {
+      resolvedComments.push(comment.body);
+    }
+
+    if (baselineComment.status === "resolved" && comment.status !== "resolved") {
+      reopenedComments.push(comment.body);
     }
   });
+
+  const narrativeParts = [];
+
+  if (changedNodes.length) {
+    narrativeParts.push(`${changedNodes.length} layer${changedNodes.length === 1 ? "" : "s"} changed`);
+  }
+  if (addedNodes.length) {
+    narrativeParts.push(`${addedNodes.length} added`);
+  }
+  if (removedNodes.length) {
+    narrativeParts.push(`${removedNodes.length} removed`);
+  }
+  if (changedConnectors.length) {
+    narrativeParts.push(`${changedConnectors.length} connector update${changedConnectors.length === 1 ? "" : "s"}`);
+  }
+  if (addedComments.length) {
+    narrativeParts.push(`${addedComments.length} new review note${addedComments.length === 1 ? "" : "s"}`);
+  }
+  if (resolvedComments.length) {
+    narrativeParts.push(`${resolvedComments.length} resolved comment${resolvedComments.length === 1 ? "" : "s"}`);
+  }
+  if (reopenedComments.length) {
+    narrativeParts.push(`${reopenedComments.length} reopened comment${reopenedComments.length === 1 ? "" : "s"}`);
+  }
 
   return {
     counts: {
@@ -112,5 +149,10 @@ export function compareProjects(currentProject, baselineProject) {
     removedNodes: removedNodes.slice(0, 6),
     changedConnectors: changedConnectors.slice(0, 6),
     addedComments: addedComments.slice(0, 4),
+    resolvedComments: resolvedComments.slice(0, 4),
+    reopenedComments: reopenedComments.slice(0, 4),
+    narrative: narrativeParts.length
+      ? `Compared with the baseline, this figure has ${narrativeParts.join(", ")}.`
+      : "No visible structural changes detected against the baseline snapshot.",
   };
 }

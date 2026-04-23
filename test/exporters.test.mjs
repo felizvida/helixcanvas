@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   buildExportFilename,
   buildPdfFromJpegBytes,
+  buildReviewBundleText,
   collectProjectCitations,
   projectToSvg,
 } from "../src/lib/exporters.js";
@@ -152,4 +153,39 @@ test("buildPdfFromJpegBytes returns a simple one-page pdf document", () => {
   assert.match(pdfText, /\/Type \/Page/);
   assert.match(pdfText, /\/Filter \/DCTDecode/);
   assert.match(pdfText, /\/MediaBox \[0 0 600 400\]/);
+});
+
+test("buildReviewBundleText includes review notes, citations, and comparison summary", () => {
+  const bundle = buildReviewBundleText(
+    {
+      name: "EGFR figure",
+      brief: "Mechanism figure for review.",
+      board: { width: 1600, height: 1200 },
+      nodes: [{ citation: "Bioicons: Receptor" }],
+      connectors: [{ id: "c-1" }],
+      comments: [
+        { id: "comment-1", status: "open", author: "Liux", body: "Clarify the inhibitor label." },
+        { id: "comment-2", status: "resolved", author: "PI", body: "Legend looks good now." },
+      ],
+    },
+    {
+      exportPreset: { title: "Manuscript figure" },
+      comparison: {
+        narrative: "Compared with the baseline, this figure has 2 changed layers.",
+        changedNodes: ["Title"],
+        addedNodes: [],
+        removedNodes: [],
+        changedConnectors: [],
+        addedComments: ["Clarify the inhibitor label."],
+        resolvedComments: ["Legend looks good now."],
+      },
+    },
+  );
+
+  assert.match(bundle, /# EGFR figure/);
+  assert.match(bundle, /Export target: Manuscript figure/);
+  assert.match(bundle, /Compared with the baseline/);
+  assert.match(bundle, /Clarify the inhibitor label/);
+  assert.match(bundle, /Legend looks good now/);
+  assert.match(bundle, /Bioicons: Receptor/);
 });

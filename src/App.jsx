@@ -2,8 +2,10 @@ import { startTransition, useDeferredValue, useEffect, useRef, useState } from "
 import { SERVIER_ATTRIBUTION, SERVIER_KITS, SERVIER_LICENSE, SERVIER_ORIGINALS, SOURCE_POLICIES } from "./data/servier.js";
 import { EXAMPLE_PROJECTS } from "./data/exampleProjects.js";
 import { DOMAIN_STARTER_KITS } from "./data/domainStarterKits.js";
+import { STARTER_TEMPLATES } from "./data/starterTemplates.js";
 import { TEMPLATES } from "./data/templates.js";
 import { fetchAiHealth, requestFigureCritique, requestFigureEdit, requestFigurePlan } from "./lib/ai.js";
+import { applyAppBaseToPacks, resolveAppUrl } from "./lib/appPaths.js";
 import {
   createBioiconsCommunityPack,
   createServierOriginalPack,
@@ -14,13 +16,16 @@ import {
 } from "./lib/assetPacks.js";
 import {
   buildAiSuggestions,
+  buildRelatedSearchQueries,
   isDuplicateImportedAsset,
   matchesAssetSearchQuery,
   pushRecentAsset,
   sortLibraryAssets,
   toggleFavoriteAssetId,
 } from "./lib/assets.js";
+import { createDomainPresetProject, DOMAIN_PRESETS } from "./lib/domainPresets.js";
 import {
+  buildReviewBundleText,
   buildExportFilename,
   collectProjectCitations,
   createProjectPdfBlob,
@@ -29,6 +34,7 @@ import {
   downloadText,
   projectToSvg,
 } from "./lib/exporters.js";
+import { applyExportPreset, EXPORT_PRESETS, getExportPreset } from "./lib/exportPresets.js";
 import {
   createHistoryState,
   pushHistoryState,
@@ -54,10 +60,30 @@ import {
 } from "./lib/connectors.js";
 import { FONT_FAMILIES, getFontFamilyStack } from "./lib/figureStyles.js";
 import {
+  composeFigureFlowBrief,
+  createFigureFlowDefaultAnswers,
+  createFigureFlowProject,
+  FIGURE_FLOWS,
+} from "./lib/figureFlows.js";
+import { applyFigureTheme, FIGURE_THEMES } from "./lib/figureThemes.js";
+import {
+  createScientificBuilderScene,
+  getScientificBuilderDefaultOptions,
+  getScientificBuilderVariant,
+  SCIENTIFIC_BUILDER_STYLES,
+  SCIENTIFIC_BUILDERS,
+} from "./lib/scientificBuilders.js";
+import {
   createProjectDocument,
   parseProjectDocument,
   suggestProjectFilename,
 } from "./lib/projectFiles.js";
+import {
+  readStoredJson,
+  readStoredJsonEntry,
+  safeRemoveStoredValue,
+  safeWriteStoredJson,
+} from "./lib/persistence.js";
 import {
   createProjectSnapshot,
   pushProjectSnapshot,
@@ -82,6 +108,12 @@ import {
   normalizeReviewComment,
   resolveReviewCommentPosition,
 } from "./lib/reviewComments.js";
+import {
+  deleteWorkspaceState,
+  loadWorkspaceState,
+  saveWorkspaceState,
+  workspaceStoreAvailable,
+} from "./lib/workspaceStore.js";
 
 const STORAGE_KEYS = {
   project: "helixcanvas-project-v1",
@@ -93,6 +125,16 @@ const STORAGE_KEYS = {
   projectSnapshots: "helixcanvas-project-snapshots-v1",
   reusableComponents: "helixcanvas-reusable-components-v1",
 };
+
+const WORKSPACE_STATE_KEYS = {
+  project: "project",
+  importedAssets: "importedAssets",
+  recoveryDraft: "recoveryDraft",
+  projectSnapshots: "projectSnapshots",
+  reusableComponents: "reusableComponents",
+};
+
+const APP_BASE_URL = import.meta.env.BASE_URL || "/";
 
 const SOURCE_FILTERS = [
   { id: "all", label: "All sources" },
@@ -144,6 +186,12 @@ const HERO_KPIS = [
 
 function createId(prefix) {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function createScientificBuilderOptionState() {
+  return Object.fromEntries(
+    SCIENTIFIC_BUILDERS.map((builder) => [builder.id, getScientificBuilderDefaultOptions(builder)]),
+  );
 }
 
 function withNodeState(node) {
@@ -260,15 +308,6 @@ function inferTemplateFromBrief(brief) {
   }
 
   return TEMPLATES.find((template) => template.id === "signal-cascade");
-}
-
-function parseStoredJson(key, fallback) {
-  try {
-    const value = window.localStorage.getItem(key);
-    return value ? JSON.parse(value) : fallback;
-  } catch {
-    return fallback;
-  }
 }
 
 function summarizeCounts(items) {
@@ -620,6 +659,8 @@ function summarizeNodeForAi(node) {
     fontFamily: node.fontFamily ?? "",
     textAlign: node.textAlign ?? "",
     lineHeight: node.lineHeight ?? null,
+    hidden: Boolean(node.hidden),
+    locked: Boolean(node.locked),
   };
 }
 
@@ -992,6 +1033,197 @@ function StarterKitCard({ starterKit, example, onApply, onFocusLibrary, onLoadEx
   );
 }
 
+function FigureFlowCard({ flow, active, onSelect, onLoadExample }) {
+  return (
+    <article className={`example-card figure-flow-card ${active ? "is-active" : ""}`}>
+      <div className="example-card__head">
+        <div>
+          <h4>{flow.title}</h4>
+          <p>{flow.description}</p>
+        </div>
+        <span className="pack-status">{flow.domain}</span>
+      </div>
+      <div className="ai-pill-row">
+        <span className="ai-pill">{flow.templateId}</span>
+        <span className="ai-pill">{flow.questions.length} prompts</span>
+      </div>
+      <p className="helper-copy">{flow.starterPrompt}</p>
+      <div className="library-summary">
+        <span>{flow.focusQuery}</span>
+        <span>{flow.preferredSourceBucket}</span>
+      </div>
+      <div className="example-card__actions">
+        <button type="button" className={active ? "secondary-button" : "ghost-button"} onClick={() => onSelect(flow)}>
+          {active ? "Selected" : "Use builder"}
+        </button>
+        {flow.exampleId ? (
+          <button type="button" className="ghost-button" onClick={() => onLoadExample(flow)}>
+            Open real example
+          </button>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function StarterTemplateCard({ starterTemplate, example, onLoad, onLoadExample }) {
+  return (
+    <article className="example-card starter-template-card">
+      <div className="example-card__head">
+        <div>
+          <h4>{starterTemplate.title}</h4>
+          <p>{starterTemplate.description}</p>
+        </div>
+        <span className="pack-status">{starterTemplate.domain}</span>
+      </div>
+      <div className="ai-pill-row">
+        {starterTemplate.tags.map((tag) => (
+          <span key={tag} className="ai-pill">
+            {tag}
+          </span>
+        ))}
+      </div>
+      <p className="helper-copy">{starterTemplate.bestFor}</p>
+      <div className="library-summary">
+        <span>{starterTemplate.focusQuery}</span>
+        {example ? <span>{example.title}</span> : null}
+      </div>
+      <div className="example-card__actions">
+        <button type="button" className="secondary-button" onClick={() => onLoad(starterTemplate)}>
+          Load starter
+        </button>
+        {example ? (
+          <button type="button" className="ghost-button" onClick={() => onLoadExample(starterTemplate)}>
+            Open example
+          </button>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function ScientificBuilderCard({
+  builder,
+  styleOptions,
+  selectedStyleId,
+  selectedVariantId,
+  onChangeStyle,
+  onChangeVariant,
+  onInsert,
+  onFocusLibrary,
+}) {
+  const activeVariant =
+    builder.variants.find((variant) => variant.id === selectedVariantId) ?? builder.variants[0];
+
+  return (
+    <article className="example-card scientific-builder-card">
+      <div className="example-card__head">
+        <div>
+          <h4>{builder.title}</h4>
+          <p>{builder.description}</p>
+        </div>
+      </div>
+      <div className="ai-pill-row">
+        {builder.tags.map((tag) => (
+          <span key={tag} className="ai-pill">
+            {tag}
+          </span>
+        ))}
+      </div>
+      <p className="helper-copy">{activeVariant?.description ?? builder.summary}</p>
+      <div className="library-summary">
+        <span>{activeVariant?.focusQuery ?? builder.focusQuery}</span>
+        <span>{builder.preferredSourceBucket}</span>
+      </div>
+      <div className="builder-control-grid">
+        <label className="figure-flow-field">
+          Variant
+          <select
+            className="text-input"
+            value={selectedVariantId}
+            onChange={(event) => onChangeVariant(builder.id, event.target.value)}
+          >
+            {builder.variants.map((variant) => (
+              <option key={variant.id} value={variant.id}>
+                {variant.title}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="figure-flow-field">
+          Style
+          <select
+            className="text-input"
+            value={selectedStyleId}
+            onChange={(event) => onChangeStyle(builder.id, event.target.value)}
+          >
+            {styleOptions.map((styleOption) => (
+              <option key={styleOption.id} value={styleOption.id}>
+                {styleOption.title}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="example-card__actions">
+        <button type="button" className="secondary-button" onClick={() => onInsert(builder)}>
+          Insert scaffold
+        </button>
+        <button type="button" className="ghost-button" onClick={() => onFocusLibrary(builder)}>
+          Focus library
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function DomainPresetCard({ preset, onApply }) {
+  return (
+    <article className="example-card domain-preset-card">
+      <div className="example-card__head">
+        <div>
+          <h4>{preset.title}</h4>
+          <p>{preset.description}</p>
+        </div>
+      </div>
+      <div className="library-summary">
+        <span>{preset.flowId}</span>
+        <span>{preset.themeId}</span>
+        <span>{preset.builderPlacements.length} scaffolds</span>
+      </div>
+      <div className="example-card__actions">
+        <button type="button" className="secondary-button" onClick={() => onApply(preset)}>
+          Load preset
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function FigureThemeCard({ theme, active, onApply }) {
+  return (
+    <article className={`example-card theme-card ${active ? "is-active" : ""}`}>
+      <div className="example-card__head">
+        <div>
+          <h4>{theme.title}</h4>
+          <p>{theme.description}</p>
+        </div>
+      </div>
+      <div className="theme-preview-row">
+        <span style={{ background: theme.palette.background }} />
+        <span style={{ background: theme.palette.accent }} />
+        <span style={{ background: theme.palette.coral }} />
+        <span style={{ background: theme.palette.olive }} />
+      </div>
+      <div className="example-card__actions">
+        <button type="button" className={active ? "secondary-button" : "ghost-button"} onClick={() => onApply(theme)}>
+          {active ? "Applied" : "Apply theme"}
+        </button>
+      </div>
+    </article>
+  );
+}
+
 function KitCard({ kit }) {
   return (
     <article className="kit-card">
@@ -1073,18 +1305,20 @@ function App() {
   const [project, setProject] = useState(() =>
     typeof window === "undefined"
       ? createStarterProject()
-      : prepareLoadedProject(parseStoredJson(STORAGE_KEYS.project, createStarterProject())),
+      : prepareLoadedProject(readStoredJson(window.localStorage, STORAGE_KEYS.project, createStarterProject())),
   );
   const [projectFileName, setProjectFileName] = useState(() =>
-    typeof window === "undefined" ? "" : parseStoredJson(STORAGE_KEYS.projectMeta, {}).fileName ?? "",
+    typeof window === "undefined"
+      ? ""
+      : readStoredJson(window.localStorage, STORAGE_KEYS.projectMeta, {}).fileName ?? "",
   );
   const [savedProjectUpdatedAt, setSavedProjectUpdatedAt] = useState(() =>
     typeof window === "undefined"
       ? null
-      : parseStoredJson(STORAGE_KEYS.projectMeta, {}).savedUpdatedAt ?? null,
+      : readStoredJson(window.localStorage, STORAGE_KEYS.projectMeta, {}).savedUpdatedAt ?? null,
   );
   const [importedAssets, setImportedAssets] = useState(() =>
-    typeof window === "undefined" ? [] : parseStoredJson(STORAGE_KEYS.importedAssets, []),
+    typeof window === "undefined" ? [] : readStoredJson(window.localStorage, STORAGE_KEYS.importedAssets, []),
   );
   const [selection, setSelection] = useState(null);
   const [libraryQuery, setLibraryQuery] = useState("");
@@ -1092,17 +1326,23 @@ function App() {
   const [packFilter, setPackFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [sortMode, setSortMode] = useState("relevance");
-  const [brief, setBrief] = useState("");
+  const [brief, setBrief] = useState(() =>
+    typeof window === "undefined"
+      ? ""
+      : prepareLoadedProject(
+          readStoredJson(window.localStorage, STORAGE_KEYS.project, createStarterProject()),
+        ).brief ?? "",
+  );
   const [importUrl, setImportUrl] = useState("");
   const [notice, setNotice] = useState("");
   const [zoom, setZoom] = useState(0.78);
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [dragState, setDragState] = useState(null);
   const [favoriteAssetIds, setFavoriteAssetIds] = useState(() =>
-    typeof window === "undefined" ? [] : parseStoredJson(STORAGE_KEYS.favoriteAssets, []),
+    typeof window === "undefined" ? [] : readStoredJson(window.localStorage, STORAGE_KEYS.favoriteAssets, []),
   );
   const [recentAssetIds, setRecentAssetIds] = useState(() =>
-    typeof window === "undefined" ? [] : parseStoredJson(STORAGE_KEYS.recentAssets, []),
+    typeof window === "undefined" ? [] : readStoredJson(window.localStorage, STORAGE_KEYS.recentAssets, []),
   );
   const [historyVersion, setHistoryVersion] = useState(0);
   const [aiStatus, setAiStatus] = useState({
@@ -1115,15 +1355,15 @@ function App() {
   const [aiCritique, setAiCritique] = useState(null);
   const [aiSuggestions, setAiSuggestions] = useState([]);
   const [recoveryDraft, setRecoveryDraft] = useState(() =>
-    typeof window === "undefined" ? null : parseStoredJson(STORAGE_KEYS.recoveryDraft, null),
+    typeof window === "undefined" ? null : readStoredJson(window.localStorage, STORAGE_KEYS.recoveryDraft, null),
   );
   const [projectSnapshots, setProjectSnapshots] = useState(() =>
-    typeof window === "undefined" ? [] : parseStoredJson(STORAGE_KEYS.projectSnapshots, []),
+    typeof window === "undefined" ? [] : readStoredJson(window.localStorage, STORAGE_KEYS.projectSnapshots, []),
   );
   const [snapshotLabel, setSnapshotLabel] = useState("");
   const [compareSnapshotId, setCompareSnapshotId] = useState("");
   const [reusableComponents, setReusableComponents] = useState(() =>
-    typeof window === "undefined" ? [] : parseStoredJson(STORAGE_KEYS.reusableComponents, []),
+    typeof window === "undefined" ? [] : readStoredJson(window.localStorage, STORAGE_KEYS.reusableComponents, []),
   );
   const [componentLabel, setComponentLabel] = useState("");
   const [aiEditPrompt, setAiEditPrompt] = useState("");
@@ -1135,39 +1375,101 @@ function App() {
   });
   const [exportScale, setExportScale] = useState(2);
   const [transparentExport, setTransparentExport] = useState(false);
+  const [exportPresetId, setExportPresetId] = useState("custom");
   const [commentsVisible, setCommentsVisible] = useState(true);
+  const [reviewFilter, setReviewFilter] = useState("all");
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [commandPaletteQuery, setCommandPaletteQuery] = useState("");
   const [commandPaletteIndex, setCommandPaletteIndex] = useState(0);
+  const [selectedFigureFlowId, setSelectedFigureFlowId] = useState(FIGURE_FLOWS[0]?.id ?? "");
+  const [figureFlowAnswers, setFigureFlowAnswers] = useState(() =>
+    Object.fromEntries(
+      FIGURE_FLOWS.map((flow) => [flow.id, createFigureFlowDefaultAnswers(flow)]),
+    ),
+  );
+  const [figureFlowResult, setFigureFlowResult] = useState(null);
+  const [scientificBuilderOptions, setScientificBuilderOptions] = useState(() =>
+    createScientificBuilderOptionState(),
+  );
   const [online, setOnline] = useState(() =>
     typeof navigator === "undefined" ? true : navigator.onLine,
   );
   const [installPromptEvent, setInstallPromptEvent] = useState(null);
   const [installBusy, setInstallBusy] = useState(false);
+  const [persistenceReady, setPersistenceReady] = useState(() => typeof window === "undefined");
+  const [persistenceMessage, setPersistenceMessage] = useState("");
   const [exportBusy, setExportBusy] = useState({
     png: false,
     pdf: false,
   });
+  const desktopBridge =
+    typeof window === "undefined" ? null : window.helixcanvasDesktop ?? null;
 
   const boardRef = useRef(null);
   const historyRef = useRef(createHistoryState());
   const dragHistoryCapturedRef = useRef(false);
   const projectImportInputRef = useRef(null);
   const projectFileHandleRef = useRef(null);
+  const projectFilePathRef = useRef("");
   const commandPaletteInputRef = useRef(null);
+  const persistenceMessageRef = useRef("");
   const deferredQuery = useDeferredValue(libraryQuery.trim().toLowerCase());
+
+  function reportPersistenceIssue(message) {
+    setPersistenceMessage(message);
+
+    if (persistenceMessageRef.current === message) {
+      return;
+    }
+
+    persistenceMessageRef.current = message;
+    setNotice(message);
+  }
+
+  function clearProjectFileSessionOrigin() {
+    projectFileHandleRef.current = null;
+    projectFilePathRef.current = "";
+  }
+
+  function persistWorkspaceValue(storeKey, legacyStorageKey, value) {
+    if (workspaceStoreAvailable()) {
+      return saveWorkspaceState(storeKey, value);
+    }
+
+    const result = safeWriteStoredJson(window.localStorage, legacyStorageKey, value);
+
+    if (!result.ok) {
+      return Promise.reject(result.error || new Error("Could not persist workspace state."));
+    }
+
+    return Promise.resolve();
+  }
+
+  function clearWorkspaceValue(storeKey, legacyStorageKey) {
+    if (workspaceStoreAvailable()) {
+      return deleteWorkspaceState(storeKey);
+    }
+
+    const result = safeRemoveStoredValue(window.localStorage, legacyStorageKey);
+
+    if (!result.ok) {
+      return Promise.reject(result.error || new Error("Could not clear workspace state."));
+    }
+
+    return Promise.resolve();
+  }
 
   useEffect(() => {
     async function loadLibrary() {
       try {
-        const response = await fetch("/data/library.packs.json");
+        const response = await fetch(resolveAppUrl("data/library.packs.json", APP_BASE_URL));
 
         if (!response.ok) {
           throw new Error("Pack manifest unavailable.");
         }
 
         const payload = await response.json();
-        const packs = parseLibraryPackManifest(payload);
+        const packs = applyAppBaseToPacks(parseLibraryPackManifest(payload), APP_BASE_URL);
 
         if (!packs.length) {
           throw new Error("Pack manifest is empty.");
@@ -1182,7 +1484,7 @@ function App() {
 
       try {
         const [items] = await Promise.all([
-          fetch("/data/bioicons.library.json").then((response) => {
+          fetch(resolveAppUrl("data/bioicons.library.json", APP_BASE_URL)).then((response) => {
             if (!response.ok) {
               throw new Error("Legacy library unavailable.");
             }
@@ -1191,7 +1493,7 @@ function App() {
           }),
         ]);
 
-        const packs = createBuiltInPacksFromLegacyLibrary(items);
+        const packs = applyAppBaseToPacks(createBuiltInPacksFromLegacyLibrary(items), APP_BASE_URL);
         setLibraryPacks(packs);
         setLibrary(flattenAssetPacks(packs));
         setLibraryStats(summarizeLibraryPacks(packs));
@@ -1206,6 +1508,137 @@ function App() {
 
   useEffect(() => {
     if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function hydrateWorkspace() {
+      const storage = window.localStorage;
+
+      if (!workspaceStoreAvailable()) {
+        reportPersistenceIssue(
+          "Using reduced browser storage. Large imports may not persist reliably in this browser.",
+        );
+        setPersistenceReady(true);
+        return;
+      }
+
+      try {
+        const [
+          storedProject,
+          storedImportedAssets,
+          storedRecoveryDraft,
+          storedProjectSnapshots,
+          storedReusableComponents,
+        ] = await Promise.all([
+          loadWorkspaceState(WORKSPACE_STATE_KEYS.project),
+          loadWorkspaceState(WORKSPACE_STATE_KEYS.importedAssets),
+          loadWorkspaceState(WORKSPACE_STATE_KEYS.recoveryDraft),
+          loadWorkspaceState(WORKSPACE_STATE_KEYS.projectSnapshots),
+          loadWorkspaceState(WORKSPACE_STATE_KEYS.reusableComponents),
+        ]);
+
+        const legacyProject = readStoredJsonEntry(storage, STORAGE_KEYS.project);
+        const legacyImportedAssets = readStoredJsonEntry(storage, STORAGE_KEYS.importedAssets);
+        const legacyRecoveryDraft = readStoredJsonEntry(storage, STORAGE_KEYS.recoveryDraft);
+        const legacyProjectSnapshots = readStoredJsonEntry(storage, STORAGE_KEYS.projectSnapshots);
+        const legacyReusableComponents = readStoredJsonEntry(storage, STORAGE_KEYS.reusableComponents);
+
+        if (!cancelled) {
+          if (storedProject.found) {
+            const hydratedProject = prepareLoadedProject(storedProject.value);
+            setProject(hydratedProject);
+            setBrief(hydratedProject.brief ?? "");
+          } else if (legacyProject.found) {
+            const hydratedProject = prepareLoadedProject(legacyProject.value);
+            setProject(hydratedProject);
+            setBrief(hydratedProject.brief ?? "");
+          }
+
+          if (storedImportedAssets.found) {
+            setImportedAssets(Array.isArray(storedImportedAssets.value) ? storedImportedAssets.value : []);
+          }
+
+          if (storedRecoveryDraft.found) {
+            setRecoveryDraft(storedRecoveryDraft.value);
+          }
+
+          if (storedProjectSnapshots.found) {
+            setProjectSnapshots(Array.isArray(storedProjectSnapshots.value) ? storedProjectSnapshots.value : []);
+          }
+
+          if (storedReusableComponents.found) {
+            setReusableComponents(
+              Array.isArray(storedReusableComponents.value) ? storedReusableComponents.value : [],
+            );
+          }
+        }
+
+        const migrations = [];
+
+        if (!storedProject.found && legacyProject.found) {
+          migrations.push(saveWorkspaceState(WORKSPACE_STATE_KEYS.project, legacyProject.value));
+        }
+        if (!storedImportedAssets.found && legacyImportedAssets.found) {
+          migrations.push(
+            saveWorkspaceState(WORKSPACE_STATE_KEYS.importedAssets, legacyImportedAssets.value),
+          );
+        }
+        if (!storedRecoveryDraft.found && legacyRecoveryDraft.found) {
+          migrations.push(saveWorkspaceState(WORKSPACE_STATE_KEYS.recoveryDraft, legacyRecoveryDraft.value));
+        }
+        if (!storedProjectSnapshots.found && legacyProjectSnapshots.found) {
+          migrations.push(
+            saveWorkspaceState(WORKSPACE_STATE_KEYS.projectSnapshots, legacyProjectSnapshots.value),
+          );
+        }
+        if (!storedReusableComponents.found && legacyReusableComponents.found) {
+          migrations.push(
+            saveWorkspaceState(WORKSPACE_STATE_KEYS.reusableComponents, legacyReusableComponents.value),
+          );
+        }
+
+        await Promise.all(migrations);
+
+        [
+          STORAGE_KEYS.project,
+          STORAGE_KEYS.importedAssets,
+          STORAGE_KEYS.recoveryDraft,
+          STORAGE_KEYS.projectSnapshots,
+          STORAGE_KEYS.reusableComponents,
+        ].forEach((key) => safeRemoveStoredValue(storage, key));
+
+        if (!cancelled) {
+          setPersistenceMessage("");
+          persistenceMessageRef.current = "";
+        }
+      } catch {
+        if (!cancelled) {
+          reportPersistenceIssue(
+            "Local persistence is partially unavailable. Your current edits still work, but large imports may not survive a refresh.",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setPersistenceReady(true);
+        }
+      }
+    }
+
+    hydrateWorkspace();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (!persistenceReady) {
       return;
     }
 
@@ -1217,7 +1650,7 @@ function App() {
       const example = EXAMPLE_PROJECTS.find((item) => item.id === exampleId);
 
       if (example) {
-        projectFileHandleRef.current = null;
+        clearProjectFileSessionOrigin();
         replaceProjectWorkspace(example.project, {
           fileName: `${example.id}.helixcanvas.json`,
         });
@@ -1230,7 +1663,7 @@ function App() {
         window.scrollTo({ top: 420, behavior: "auto" });
       }, 120);
     }
-  }, []);
+  }, [persistenceReady]);
 
   useEffect(() => {
     fetchAiHealth()
@@ -1253,50 +1686,120 @@ function App() {
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEYS.project, JSON.stringify(project));
-  }, [project]);
-
-  useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEYS.importedAssets, JSON.stringify(importedAssets));
-  }, [importedAssets]);
-
-  useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEYS.favoriteAssets, JSON.stringify(favoriteAssetIds));
-  }, [favoriteAssetIds]);
-
-  useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEYS.recentAssets, JSON.stringify(recentAssetIds));
-  }, [recentAssetIds]);
-
-  useEffect(() => {
-    window.localStorage.setItem(
-      STORAGE_KEYS.projectMeta,
-      JSON.stringify({
-        fileName: projectFileName,
-        savedUpdatedAt: savedProjectUpdatedAt,
-      }),
-    );
-  }, [projectFileName, savedProjectUpdatedAt]);
-
-  useEffect(() => {
-    if (!recoveryDraft) {
-      window.localStorage.removeItem(STORAGE_KEYS.recoveryDraft);
+    if (!persistenceReady) {
       return;
     }
 
-    window.localStorage.setItem(STORAGE_KEYS.recoveryDraft, JSON.stringify(recoveryDraft));
-  }, [recoveryDraft]);
+    persistWorkspaceValue(WORKSPACE_STATE_KEYS.project, STORAGE_KEYS.project, project).catch(() => {
+      reportPersistenceIssue(
+        "Could not persist the current project locally. Keep an exported project copy until storage is available again.",
+      );
+    });
+  }, [persistenceReady, project]);
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEYS.projectSnapshots, JSON.stringify(projectSnapshots));
-  }, [projectSnapshots]);
+    if (!persistenceReady) {
+      return;
+    }
+
+    persistWorkspaceValue(
+      WORKSPACE_STATE_KEYS.importedAssets,
+      STORAGE_KEYS.importedAssets,
+      importedAssets,
+    ).catch(() => {
+      reportPersistenceIssue(
+        "Could not persist imported assets locally. Re-exported copies may be safer until storage recovers.",
+      );
+    });
+  }, [importedAssets, persistenceReady]);
 
   useEffect(() => {
-    window.localStorage.setItem(
+    if (!persistenceReady) {
+      return;
+    }
+
+    const result = safeWriteStoredJson(window.localStorage, STORAGE_KEYS.favoriteAssets, favoriteAssetIds);
+
+    if (!result.ok) {
+      reportPersistenceIssue("Could not persist saved assets locally.");
+    }
+  }, [favoriteAssetIds, persistenceReady]);
+
+  useEffect(() => {
+    if (!persistenceReady) {
+      return;
+    }
+
+    const result = safeWriteStoredJson(window.localStorage, STORAGE_KEYS.recentAssets, recentAssetIds);
+
+    if (!result.ok) {
+      reportPersistenceIssue("Could not persist recent assets locally.");
+    }
+  }, [persistenceReady, recentAssetIds]);
+
+  useEffect(() => {
+    if (!persistenceReady) {
+      return;
+    }
+
+    const result = safeWriteStoredJson(window.localStorage, STORAGE_KEYS.projectMeta, {
+      fileName: projectFileName,
+      savedUpdatedAt: savedProjectUpdatedAt,
+    });
+
+    if (!result.ok) {
+      reportPersistenceIssue("Could not persist local project metadata.");
+    }
+  }, [persistenceReady, projectFileName, savedProjectUpdatedAt]);
+
+  useEffect(() => {
+    if (!persistenceReady) {
+      return;
+    }
+
+    if (!recoveryDraft) {
+      clearWorkspaceValue(WORKSPACE_STATE_KEYS.recoveryDraft, STORAGE_KEYS.recoveryDraft).catch(() => {
+        reportPersistenceIssue("Could not clear the recovery draft from local storage.");
+      });
+      return;
+    }
+
+    persistWorkspaceValue(
+      WORKSPACE_STATE_KEYS.recoveryDraft,
+      STORAGE_KEYS.recoveryDraft,
+      recoveryDraft,
+    ).catch(() => {
+      reportPersistenceIssue("Could not persist the recovery draft locally.");
+    });
+  }, [persistenceReady, recoveryDraft]);
+
+  useEffect(() => {
+    if (!persistenceReady) {
+      return;
+    }
+
+    persistWorkspaceValue(
+      WORKSPACE_STATE_KEYS.projectSnapshots,
+      STORAGE_KEYS.projectSnapshots,
+      projectSnapshots,
+    ).catch(() => {
+      reportPersistenceIssue("Could not persist local snapshots.");
+    });
+  }, [persistenceReady, projectSnapshots]);
+
+  useEffect(() => {
+    if (!persistenceReady) {
+      return;
+    }
+
+    persistWorkspaceValue(
+      WORKSPACE_STATE_KEYS.reusableComponents,
       STORAGE_KEYS.reusableComponents,
-      JSON.stringify(reusableComponents),
-    );
-  }, [reusableComponents]);
+      reusableComponents,
+    ).catch(() => {
+      reportPersistenceIssue("Could not persist reusable components locally.");
+    });
+  }, [persistenceReady, reusableComponents]);
 
   useEffect(() => {
     if (!notice) {
@@ -1563,6 +2066,27 @@ function App() {
       usedAssetIds,
     },
   );
+  const relatedSearchQueries = buildRelatedSearchQueries(libraryQuery);
+  const activeTheme = FIGURE_THEMES.find((theme) => theme.id === project.palette?.themeId) ?? null;
+  const selectedFigureFlow =
+    FIGURE_FLOWS.find((flow) => flow.id === selectedFigureFlowId) ?? FIGURE_FLOWS[0] ?? null;
+  const selectedFigureFlowAnswers = selectedFigureFlow
+    ? figureFlowAnswers[selectedFigureFlow.id] ?? createFigureFlowDefaultAnswers(selectedFigureFlow)
+    : {};
+  const selectedFigureFlowResult =
+    selectedFigureFlow && figureFlowResult?.flowId === selectedFigureFlow.id ? figureFlowResult : null;
+  const selectedFigureFlowExample =
+    selectedFigureFlow?.exampleId
+      ? EXAMPLE_PROJECTS.find((item) => item.id === selectedFigureFlow.exampleId) ?? null
+      : null;
+  const starterTemplateExamples = Object.fromEntries(
+    STARTER_TEMPLATES.map((starterTemplate) => [
+      starterTemplate.id,
+      starterTemplate.exampleId
+        ? EXAMPLE_PROJECTS.find((item) => item.id === starterTemplate.exampleId) ?? null
+        : null,
+    ]),
+  );
 
   const selectedNodes = getSelectedNodes(project, selection);
   const selectedNodeIds = selectedNodes.map((node) => node.id);
@@ -1627,6 +2151,14 @@ function App() {
   const snapshotComparison = compareSnapshot?.project
     ? compareProjects(project, compareSnapshot.project)
     : null;
+  const selectedExportPreset = getExportPreset(exportPresetId);
+  const filteredComments = positionedComments.filter(({ comment }) =>
+    reviewFilter === "open"
+      ? comment.status !== "resolved"
+      : reviewFilter === "resolved"
+        ? comment.status === "resolved"
+        : true,
+  );
 
   function applyProjectChange(updater, options = {}) {
     const { selection: nextSelection, notice: noticeMessage } = options;
@@ -1731,7 +2263,7 @@ function App() {
       return;
     }
 
-    projectFileHandleRef.current = null;
+    clearProjectFileSessionOrigin();
     replaceProjectWorkspace(snapshot.project, {
       fileName: snapshot.fileName ?? "",
       savedUpdatedAt: snapshot.savedUpdatedAt ?? null,
@@ -1750,7 +2282,7 @@ function App() {
       updatedAt: new Date().toISOString(),
     };
 
-    projectFileHandleRef.current = null;
+    clearProjectFileSessionOrigin();
     replaceProjectWorkspace(branchedProject, {
       fileName: "",
       savedUpdatedAt: null,
@@ -2007,6 +2539,64 @@ function App() {
     setNotice(`Focused the library on ${starterKit.title}`);
   }
 
+  function getScientificBuilderInsertOptions(builderId) {
+    return {
+      ...getScientificBuilderDefaultOptions(builderId),
+      ...(scientificBuilderOptions[builderId] ?? {}),
+    };
+  }
+
+  function updateScientificBuilderOption(builderId, patch) {
+    setScientificBuilderOptions((current) => ({
+      ...current,
+      [builderId]: {
+        ...getScientificBuilderDefaultOptions(builderId),
+        ...(current[builderId] ?? {}),
+        ...patch,
+      },
+    }));
+  }
+
+  function loadStarterTemplate(starterTemplate) {
+    if (starterTemplate.presetId) {
+      const preset = DOMAIN_PRESETS.find((item) => item.id === starterTemplate.presetId);
+
+      if (preset) {
+        loadDomainPreset(preset);
+        return;
+      }
+    }
+
+    if (starterTemplate.templateId) {
+      const template = TEMPLATES.find((item) => item.id === starterTemplate.templateId);
+
+      if (!template) {
+        setNotice("That starter template is not available");
+        return;
+      }
+
+      setLibraryQuery(starterTemplate.focusQuery ?? "");
+      setSourceFilter("all");
+      setPackFilter("all");
+      setCategoryFilter("all");
+      applyTemplate(template);
+      setNotice(`Loaded starter: ${starterTemplate.title}`);
+    }
+  }
+
+  function loadStarterTemplateExample(starterTemplate) {
+    const example = starterTemplate.exampleId
+      ? EXAMPLE_PROJECTS.find((item) => item.id === starterTemplate.exampleId)
+      : null;
+
+    if (example) {
+      loadExampleProject(example);
+      return;
+    }
+
+    loadStarterTemplate(starterTemplate);
+  }
+
   function applyStarterKit(starterKit) {
     const template =
       TEMPLATES.find((item) => item.id === starterKit.templateId) ?? TEMPLATES[0];
@@ -2031,12 +2621,214 @@ function App() {
     loadExampleProject(example);
   }
 
+  function selectFigureFlow(flow) {
+    setSelectedFigureFlowId(flow.id);
+  }
+
+  function updateFigureFlowAnswer(flowId, fieldId, value) {
+    setFigureFlowAnswers((current) => ({
+      ...current,
+      [flowId]: {
+        ...(current[flowId] ?? createFigureFlowDefaultAnswers(flowId)),
+        [fieldId]: value,
+      },
+    }));
+  }
+
+  function resetFigureFlowAnswers(flowId) {
+    setFigureFlowAnswers((current) => ({
+      ...current,
+      [flowId]: createFigureFlowDefaultAnswers(flowId),
+    }));
+    setFigureFlowResult((current) => (current?.flowId === flowId ? null : current));
+    setNotice("Reset the figure flow prompts");
+  }
+
+  function applyFigureFlowFocus(flow, answers, result = null) {
+    const nextBrief = result?.prompt ?? composeFigureFlowBrief(flow, answers);
+    const nextQuery = result?.libraryQuery ?? flow.focusQuery;
+
+    setBrief(nextBrief);
+    setLibraryQuery(nextQuery);
+    setSourceFilter(flow.preferredSourceBucket ?? "all");
+    setPackFilter("all");
+    setCategoryFilter("all");
+  }
+
+  function focusScientificBuilder(builder) {
+    const insertOptions = getScientificBuilderInsertOptions(builder.id);
+    const variant = getScientificBuilderVariant(builder, insertOptions.variantId);
+
+    setLibraryQuery(variant.focusQuery ?? builder.focusQuery);
+    setSourceFilter(builder.preferredSourceBucket ?? "all");
+    setPackFilter("all");
+    setCategoryFilter("all");
+    setNotice(`Focused the library on ${builder.title} · ${variant.title}`);
+  }
+
+  function insertScientificBuilder(builder) {
+    const insertOptions = getScientificBuilderInsertOptions(builder.id);
+    const position = {
+      x: Math.max(40, 92 + (project.nodes.length % 4) * 44),
+      y: Math.max(60, 118 + (project.nodes.length % 5) * 36),
+    };
+    const scene = createScientificBuilderScene(builder, {
+      createId,
+      palette: project.palette,
+      position,
+      styleId: insertOptions.styleId,
+      variantId: insertOptions.variantId,
+    });
+
+    focusScientificBuilder(builder);
+    applyProjectChange(
+      (current) => ({
+        ...current,
+        nodes: [...current.nodes, ...scene.nodes],
+        connectors: [...current.connectors, ...scene.connectors],
+      }),
+      {
+        selection: createNodeSelection(scene.nodes.map((node) => node.id)),
+        notice: `Inserted ${builder.title} · ${scene.variant.title}`,
+      },
+    );
+  }
+
+  function applyThemeToCurrentProject(theme) {
+    stageRecoveryDraft(`Applied theme ${theme.title}`);
+    applyProjectChange(applyFigureTheme(project, theme), {
+      selection: selection,
+      notice: `Applied ${theme.title}`,
+    });
+  }
+
+  function loadDomainPreset(preset) {
+    const result = createDomainPresetProject(preset, {
+      library: unifiedLibrary,
+      createId,
+    });
+
+    setSelectedFigureFlowId(result.flow.id);
+    setFigureFlowAnswers((current) => ({
+      ...current,
+      [result.flow.id]: result.answers,
+    }));
+    setFigureFlowResult(result);
+    setBrief(result.prompt);
+    setLibraryQuery(result.libraryQuery);
+    setSourceFilter(result.flow.preferredSourceBucket ?? "all");
+    setPackFilter("all");
+    setCategoryFilter("all");
+    setScientificBuilderOptions((current) => {
+      const next = { ...current };
+
+      for (const placement of preset.builderPlacements ?? []) {
+        next[placement.builderId] = {
+          ...getScientificBuilderDefaultOptions(placement.builderId),
+          ...(next[placement.builderId] ?? {}),
+          ...(placement.variantId ? { variantId: placement.variantId } : {}),
+          ...(placement.styleId ? { styleId: placement.styleId } : {}),
+        };
+      }
+
+      return next;
+    });
+    replaceProjectWorkspace(result.project, {
+      notice: `Loaded preset: ${preset.title}`,
+      stageReason: `Loaded preset ${preset.title}`,
+    });
+  }
+
+  function useRelatedSearchQuery(nextQuery) {
+    setLibraryQuery(nextQuery);
+    setNotice(`Focused the library on “${nextQuery}”`);
+  }
+
+  function loadFigureFlowExample(flow) {
+    selectFigureFlow(flow);
+
+    if (!flow.exampleId) {
+      setNotice("This builder does not ship with a real example yet");
+      return;
+    }
+
+    const example = EXAMPLE_PROJECTS.find((item) => item.id === flow.exampleId);
+
+    if (!example) {
+      setNotice("That example is unavailable right now");
+      return;
+    }
+
+    loadExampleProject(example);
+  }
+
+  function generateFigureFlow(flow) {
+    const answers = figureFlowAnswers[flow.id] ?? createFigureFlowDefaultAnswers(flow);
+    const result = createFigureFlowProject(flow, answers, {
+      library: unifiedLibrary,
+      createId,
+    });
+    const matchedCount = result.matchedAssets.length;
+    const missingCount = result.missingAssetQueries.length;
+    const noticeMessage = missingCount
+      ? `Built ${flow.title} · matched ${matchedCount} assets, ${missingCount} still worth searching`
+      : `Built ${flow.title} · matched ${matchedCount} assets`;
+
+    selectFigureFlow(flow);
+    setFigureFlowResult(result);
+    applyFigureFlowFocus(flow, answers, result);
+    replaceProjectWorkspace(result.project, {
+      notice: noticeMessage,
+      stageReason: `Built ${flow.title}`,
+    });
+  }
+
+  async function draftFigureFlowWithAi(flow) {
+    const answers = figureFlowAnswers[flow.id] ?? createFigureFlowDefaultAnswers(flow);
+    const figureFlowSeed = createFigureFlowProject(flow, answers, {
+      library: unifiedLibrary,
+      createId,
+    });
+    const figureFlowBrief = composeFigureFlowBrief(flow, answers);
+
+    selectFigureFlow(flow);
+    applyFigureFlowFocus(flow, answers, figureFlowSeed);
+    setNotice(`Sending ${flow.title} to the AI copilot`);
+    await draftWithAi(figureFlowBrief);
+  }
+
+  async function openProjectFromDesktop() {
+    try {
+      const result = await desktopBridge?.openProjectFile?.();
+
+      if (!result || result.canceled) {
+        return;
+      }
+
+      const parsed = parseProjectDocument(result.contents);
+      projectFileHandleRef.current = null;
+      projectFilePathRef.current = result.filePath ?? "";
+      replaceProjectWorkspace(parsed.project, {
+        fileName: result.fileName ?? "",
+        notice: `Opened ${result.fileName ?? "project file"}`,
+        stageReason: `Opened ${result.fileName ?? "project file"}`,
+      });
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not open that project file");
+    }
+  }
+
   function requestProjectOpen() {
+    if (desktopBridge?.openProjectFile) {
+      void openProjectFromDesktop();
+      return;
+    }
+
     projectImportInputRef.current?.click();
   }
 
   function loadExampleProject(example) {
-    projectFileHandleRef.current = null;
+    clearProjectFileSessionOrigin();
     replaceProjectWorkspace(example.project, {
       fileName: `${example.id}.helixcanvas.json`,
       notice: `Loaded example: ${example.title}`,
@@ -2057,6 +2849,25 @@ function App() {
     const fallbackName = projectFileLabel;
 
     try {
+      if (desktopBridge?.saveProjectFile) {
+        const result = await desktopBridge.saveProjectFile({
+          contents,
+          currentPath: saveAs ? "" : projectFilePathRef.current,
+          suggestedName: fallbackName,
+        });
+
+        if (!result || result.canceled) {
+          return;
+        }
+
+        projectFileHandleRef.current = null;
+        projectFilePathRef.current = result.filePath ?? "";
+        setProjectFileName(result.fileName || fallbackName);
+        setSavedProjectUpdatedAt(project.updatedAt);
+        setNotice(`Saved ${result.fileName || fallbackName}`);
+        return;
+      }
+
       if ("showSaveFilePicker" in window) {
         let handle = projectFileHandleRef.current;
 
@@ -2073,6 +2884,7 @@ function App() {
             ],
           });
           projectFileHandleRef.current = handle;
+          projectFilePathRef.current = "";
         }
 
         const writable = await handle.createWritable();
@@ -2088,9 +2900,13 @@ function App() {
       if (error instanceof DOMException && error.name === "AbortError") {
         return;
       }
+
+      setNotice(error instanceof Error ? error.message : "Could not save that project file");
+      return;
     }
 
     downloadText(fallbackName, contents, "application/json");
+    clearProjectFileSessionOrigin();
     setProjectFileName(fallbackName);
     setSavedProjectUpdatedAt(project.updatedAt);
     setNotice(`Downloaded ${fallbackName}`);
@@ -2105,7 +2921,7 @@ function App() {
 
     try {
       const parsed = parseProjectDocument(await file.text());
-      projectFileHandleRef.current = null;
+      clearProjectFileSessionOrigin();
       replaceProjectWorkspace(parsed.project, {
         fileName: file.name,
         notice: `Opened ${file.name}`,
@@ -2687,16 +3503,17 @@ function App() {
     });
   }
 
-  function draftFromBrief() {
-    const template = inferTemplateFromBrief(brief);
+  function draftFromBrief(overrideBrief = "") {
+    const nextBrief = overrideBrief || brief;
+    const template = inferTemplateFromBrief(nextBrief);
 
     if (!template) {
       return;
     }
 
     const draftedProject = normalizeTemplate(template);
-    draftedProject.name = brief ? brief.slice(0, 48) : template.name;
-    draftedProject.brief = brief || template.summary;
+    draftedProject.name = nextBrief ? nextBrief.slice(0, 48) : template.name;
+    draftedProject.brief = nextBrief || template.summary;
 
     startTransition(() => {
       stageRecoveryDraft("Created a quick draft from the brief");
@@ -2733,14 +3550,16 @@ function App() {
     }
   }
 
-  async function draftWithAi() {
-    if (!brief.trim()) {
+  async function draftWithAi(overrideBrief = "") {
+    const nextBrief = overrideBrief || brief;
+
+    if (!nextBrief.trim()) {
       setNotice("Add a research brief first");
       return;
     }
 
     if (!aiStatus.configured) {
-      draftFromBrief();
+      draftFromBrief(nextBrief);
       setNotice("AI unavailable, used the local quick draft");
       return;
     }
@@ -2749,7 +3568,7 @@ function App() {
 
     try {
       const response = await requestFigurePlan({
-        brief,
+        brief: nextBrief,
         currentProject: buildProjectSummaryForAi(project),
       });
 
@@ -2794,188 +3613,259 @@ function App() {
     let focusSearch = null;
     let nextBriefValue = null;
 
-    const nextSelection = (() => {
-      let computedSelection;
+    const report = {
+      appliedSceneActions: 0,
+      appliedLibraryFocus: 0,
+      skippedLocked: 0,
+      skippedMissing: 0,
+      skippedNoChange: 0,
+    };
 
-      applyProjectChange(
-        (current) => {
-          let changed = false;
-          const nextProject = {
-            ...current,
-            nodes: [...current.nodes],
-            connectors: [...current.connectors],
-            comments: [...(current.comments ?? [])],
+    const nextProject = {
+      ...project,
+      nodes: [...project.nodes],
+      connectors: [...project.connectors],
+      comments: [...(project.comments ?? [])],
+    };
+
+    function markSceneActionApplied() {
+      report.appliedSceneActions += 1;
+    }
+
+    function markSkipped(kind) {
+      report[kind] += 1;
+    }
+
+    for (const action of result.actions ?? []) {
+      if (action.actionType === "set_project_meta") {
+        const projectName = action.projectName?.trim();
+        const briefValue = action.brief?.trim();
+        let applied = false;
+
+        if (projectName && projectName !== nextProject.name) {
+          nextProject.name = projectName;
+          applied = true;
+        }
+
+        if (briefValue && briefValue !== nextProject.brief) {
+          nextProject.brief = briefValue;
+          nextBriefValue = briefValue;
+          applied = true;
+        }
+
+        if (applied) {
+          markSceneActionApplied();
+        } else {
+          markSkipped("skippedNoChange");
+        }
+
+        continue;
+      }
+
+      if (action.actionType === "update_node_text" && action.nodeId) {
+        const nodeIndex = nextProject.nodes.findIndex((node) => node.id === action.nodeId);
+
+        if (nodeIndex === -1) {
+          markSkipped("skippedMissing");
+          continue;
+        }
+
+        const node = nextProject.nodes[nodeIndex];
+
+        if (node.locked) {
+          markSkipped("skippedLocked");
+          continue;
+        }
+
+        if (node.type === "text") {
+          const nextText = action.text ?? node.text;
+
+          if (nextText === node.text) {
+            markSkipped("skippedNoChange");
+            continue;
+          }
+
+          nextProject.nodes[nodeIndex] = {
+            ...node,
+            text: nextText,
           };
+        } else {
+          const nextText = action.text ?? node.text;
+          const nextTitle = action.title ?? node.title;
 
-          for (const action of result.actions ?? []) {
-            if (action.actionType === "set_project_meta") {
-              const projectName = action.projectName?.trim();
-              const briefValue = action.brief?.trim();
-
-              if (projectName && projectName !== nextProject.name) {
-                nextProject.name = projectName;
-                changed = true;
-              }
-
-              if (briefValue && briefValue !== nextProject.brief) {
-                nextProject.brief = briefValue;
-                nextBriefValue = briefValue;
-                changed = true;
-              }
-            }
-
-            if (action.actionType === "update_node_text" && action.nodeId) {
-              nextProject.nodes = nextProject.nodes.map((node) => {
-                if (node.id !== action.nodeId || node.locked) {
-                  return node;
-                }
-
-                touchedNodeIds.push(node.id);
-                changed = true;
-
-                if (node.type === "text") {
-                  return {
-                    ...node,
-                    text: action.text ?? node.text,
-                  };
-                }
-
-                return {
-                  ...node,
-                  text: action.text ?? node.text,
-                  title: action.title ?? node.title,
-                };
-              });
-            }
-
-            if (action.actionType === "update_node_style" && action.nodeId) {
-              nextProject.nodes = nextProject.nodes.map((node) => {
-                if (node.id !== action.nodeId || node.locked) {
-                  return node;
-                }
-
-                touchedNodeIds.push(node.id);
-                changed = true;
-
-                return withNodeState({
-                  ...node,
-                  title: action.title ?? node.title,
-                  text: action.text ?? node.text,
-                  fontFamily: action.fontFamily ?? node.fontFamily,
-                  textAlign: action.textAlign ?? node.textAlign,
-                  fontSize: Number.isFinite(action.fontSize) ? action.fontSize : node.fontSize,
-                  fontWeight: Number.isFinite(action.fontWeight) ? action.fontWeight : node.fontWeight,
-                  lineHeight: Number.isFinite(action.lineHeight) ? action.lineHeight : node.lineHeight,
-                  color: action.color ?? node.color,
-                  fill: action.fill ?? node.fill,
-                  stroke: action.stroke ?? node.stroke,
-                });
-              });
-            }
-
-            if (action.actionType === "update_node_layout" && action.nodeId) {
-              nextProject.nodes = nextProject.nodes.map((node) => {
-                if (node.id !== action.nodeId || node.locked) {
-                  return node;
-                }
-
-                touchedNodeIds.push(node.id);
-                changed = true;
-
-                return withNodeState({
-                  ...node,
-                  x: Number.isFinite(action.x) ? Math.max(0, action.x) : node.x,
-                  y: Number.isFinite(action.y) ? Math.max(0, action.y) : node.y,
-                  w: Number.isFinite(action.w) ? Math.max(24, action.w) : node.w,
-                  h: Number.isFinite(action.h) ? Math.max(24, action.h) : node.h,
-                });
-              });
-            }
-
-            if (action.actionType === "update_connector" && action.connectorId) {
-              nextProject.connectors = nextProject.connectors.map((connector) => {
-                if (connector.id !== action.connectorId) {
-                  return connector;
-                }
-
-                touchedConnectorIds.push(connector.id);
-                changed = true;
-
-                return withConnectorState({
-                  ...connector,
-                  label: action.label ?? connector.label,
-                  kind: action.kind ?? connector.kind,
-                  route: action.route ?? connector.route,
-                  stroke: action.stroke ?? connector.stroke,
-                  strokeWidth: Number.isFinite(action.strokeWidth)
-                    ? Math.max(2, action.strokeWidth)
-                    : connector.strokeWidth,
-                });
-              });
-            }
-
-            if (action.actionType === "add_callout") {
-              const nodes = createCalloutAnnotation(
-                {
-                  x: Number.isFinite(action.x) ? action.x : 220 + nextProject.nodes.length * 8,
-                  y: Number.isFinite(action.y) ? action.y : 160 + nextProject.nodes.length * 6,
-                },
-                {
-                  title: action.title ?? "AI callout",
-                  body: action.body ?? "Add a concise interpretation here.",
-                },
-              );
-
-              createdNodeIds.push(...nodes.map((node) => node.id));
-              nextProject.nodes.push(...nodes);
-              changed = true;
-            }
-
-            if (action.actionType === "add_comment") {
-              const comment = createReviewComment({
-                id: createId("comment"),
-                body: action.body ?? "Review this part of the figure.",
-                author: action.author ?? "AI copilot",
-                nodeId: action.nodeId ?? null,
-                x: Number.isFinite(action.x) ? action.x : 180 + nextProject.comments.length * 12,
-                y: Number.isFinite(action.y) ? action.y : 120 + nextProject.comments.length * 12,
-              });
-
-              createdCommentIds.push(comment.id);
-              nextProject.comments.push(comment);
-              changed = true;
-            }
-
-            if (action.actionType === "focus_library_search" && action.query) {
-              focusSearch = {
-                query: action.query,
-                preferredSourceBucket: action.preferredSourceBucket ?? "all",
-              };
-            }
+          if (nextText === node.text && nextTitle === node.title) {
+            markSkipped("skippedNoChange");
+            continue;
           }
 
-          if (!changed) {
-            return current;
-          }
+          nextProject.nodes[nodeIndex] = {
+            ...node,
+            text: nextText,
+            title: nextTitle,
+          };
+        }
 
-          return nextProject;
-        },
-        {
-          selection:
-            createdCommentIds.length
-              ? { kind: "comment", id: createdCommentIds[createdCommentIds.length - 1] }
-              : createdNodeIds.length
-                ? createNodeSelection(createdNodeIds)
-                : touchedNodeIds.length
-                  ? createNodeSelection([...new Set(touchedNodeIds)])
-                  : touchedConnectorIds.length
-                    ? { kind: "connector", id: touchedConnectorIds[touchedConnectorIds.length - 1] }
-                    : undefined,
-          notice: `Applied ${result.actions.length} AI edit${result.actions.length === 1 ? "" : "s"}`,
-        },
-      );
+        touchedNodeIds.push(node.id);
+        markSceneActionApplied();
+        continue;
+      }
 
-      return createdCommentIds.length
+      if (action.actionType === "update_node_style" && action.nodeId) {
+        const nodeIndex = nextProject.nodes.findIndex((node) => node.id === action.nodeId);
+
+        if (nodeIndex === -1) {
+          markSkipped("skippedMissing");
+          continue;
+        }
+
+        const node = nextProject.nodes[nodeIndex];
+
+        if (node.locked) {
+          markSkipped("skippedLocked");
+          continue;
+        }
+
+        const styledNode = withNodeState({
+          ...node,
+          title: action.title ?? node.title,
+          text: action.text ?? node.text,
+          fontFamily: action.fontFamily ?? node.fontFamily,
+          textAlign: action.textAlign ?? node.textAlign,
+          fontSize: Number.isFinite(action.fontSize) ? action.fontSize : node.fontSize,
+          fontWeight: Number.isFinite(action.fontWeight) ? action.fontWeight : node.fontWeight,
+          lineHeight: Number.isFinite(action.lineHeight) ? action.lineHeight : node.lineHeight,
+          color: action.color ?? node.color,
+          fill: action.fill ?? node.fill,
+          stroke: action.stroke ?? node.stroke,
+        });
+
+        if (JSON.stringify(styledNode) === JSON.stringify(node)) {
+          markSkipped("skippedNoChange");
+          continue;
+        }
+
+        nextProject.nodes[nodeIndex] = styledNode;
+        touchedNodeIds.push(node.id);
+        markSceneActionApplied();
+        continue;
+      }
+
+      if (action.actionType === "update_node_layout" && action.nodeId) {
+        const nodeIndex = nextProject.nodes.findIndex((node) => node.id === action.nodeId);
+
+        if (nodeIndex === -1) {
+          markSkipped("skippedMissing");
+          continue;
+        }
+
+        const node = nextProject.nodes[nodeIndex];
+
+        if (node.locked) {
+          markSkipped("skippedLocked");
+          continue;
+        }
+
+        const layoutNode = withNodeState({
+          ...node,
+          x: Number.isFinite(action.x) ? Math.max(0, action.x) : node.x,
+          y: Number.isFinite(action.y) ? Math.max(0, action.y) : node.y,
+          w: Number.isFinite(action.w) ? Math.max(24, action.w) : node.w,
+          h: Number.isFinite(action.h) ? Math.max(24, action.h) : node.h,
+        });
+
+        if (JSON.stringify(layoutNode) === JSON.stringify(node)) {
+          markSkipped("skippedNoChange");
+          continue;
+        }
+
+        nextProject.nodes[nodeIndex] = layoutNode;
+        touchedNodeIds.push(node.id);
+        markSceneActionApplied();
+        continue;
+      }
+
+      if (action.actionType === "update_connector" && action.connectorId) {
+        const connectorIndex = nextProject.connectors.findIndex(
+          (connector) => connector.id === action.connectorId,
+        );
+
+        if (connectorIndex === -1) {
+          markSkipped("skippedMissing");
+          continue;
+        }
+
+        const connector = nextProject.connectors[connectorIndex];
+        const nextConnector = withConnectorState({
+          ...connector,
+          label: action.label ?? connector.label,
+          kind: action.kind ?? connector.kind,
+          route: action.route ?? connector.route,
+          stroke: action.stroke ?? connector.stroke,
+          strokeWidth: Number.isFinite(action.strokeWidth)
+            ? Math.max(2, action.strokeWidth)
+            : connector.strokeWidth,
+        });
+
+        if (JSON.stringify(nextConnector) === JSON.stringify(connector)) {
+          markSkipped("skippedNoChange");
+          continue;
+        }
+
+        nextProject.connectors[connectorIndex] = nextConnector;
+        touchedConnectorIds.push(connector.id);
+        markSceneActionApplied();
+        continue;
+      }
+
+      if (action.actionType === "add_callout") {
+        const nodes = createCalloutAnnotation(
+          {
+            x: Number.isFinite(action.x) ? action.x : 220 + nextProject.nodes.length * 8,
+            y: Number.isFinite(action.y) ? action.y : 160 + nextProject.nodes.length * 6,
+          },
+          {
+            title: action.title ?? "AI callout",
+            body: action.body ?? "Add a concise interpretation here.",
+          },
+        );
+
+        createdNodeIds.push(...nodes.map((node) => node.id));
+        nextProject.nodes.push(...nodes);
+        markSceneActionApplied();
+        continue;
+      }
+
+      if (action.actionType === "add_comment") {
+        if (action.nodeId && !nextProject.nodes.some((node) => node.id === action.nodeId)) {
+          markSkipped("skippedMissing");
+          continue;
+        }
+
+        const comment = createReviewComment({
+          id: createId("comment"),
+          body: action.body ?? "Review this part of the figure.",
+          author: action.author ?? "AI copilot",
+          nodeId: action.nodeId ?? null,
+          x: Number.isFinite(action.x) ? action.x : 180 + nextProject.comments.length * 12,
+          y: Number.isFinite(action.y) ? action.y : 120 + nextProject.comments.length * 12,
+        });
+
+        createdCommentIds.push(comment.id);
+        nextProject.comments.push(comment);
+        markSceneActionApplied();
+        continue;
+      }
+
+      if (action.actionType === "focus_library_search" && action.query) {
+        focusSearch = {
+          query: action.query,
+          preferredSourceBucket: action.preferredSourceBucket ?? "all",
+        };
+      }
+    }
+
+    const nextSelection =
+      createdCommentIds.length
         ? { kind: "comment", id: createdCommentIds[createdCommentIds.length - 1] }
         : createdNodeIds.length
           ? createNodeSelection(createdNodeIds)
@@ -2984,17 +3874,53 @@ function App() {
             : touchedConnectorIds.length
               ? { kind: "connector", id: touchedConnectorIds[touchedConnectorIds.length - 1] }
               : null;
-    })();
+
+    if (report.appliedSceneActions) {
+      applyProjectChange(nextProject, {
+        selection: nextSelection ?? undefined,
+      });
+    }
 
     if (nextBriefValue) {
       setBrief(nextBriefValue);
     }
 
     if (focusSearch) {
-      setLibraryQuery(focusSearch.query);
-      setSourceFilter(focusSearch.preferredSourceBucket);
-      setPackFilter("all");
-      setCategoryFilter("all");
+      const focusChanged =
+        focusSearch.query !== libraryQuery ||
+        focusSearch.preferredSourceBucket !== sourceFilter ||
+        packFilter !== "all" ||
+        categoryFilter !== "all";
+
+      if (focusChanged) {
+        setLibraryQuery(focusSearch.query);
+        setSourceFilter(focusSearch.preferredSourceBucket);
+        setPackFilter("all");
+        setCategoryFilter("all");
+        report.appliedLibraryFocus += 1;
+      } else {
+        markSkipped("skippedNoChange");
+      }
+    }
+
+    const appliedCount = report.appliedSceneActions + report.appliedLibraryFocus;
+    const skippedCount = report.skippedLocked + report.skippedMissing + report.skippedNoChange;
+    const skippedParts = [
+      report.skippedLocked ? `${report.skippedLocked} locked` : "",
+      report.skippedMissing ? `${report.skippedMissing} missing` : "",
+      report.skippedNoChange ? `${report.skippedNoChange} unchanged` : "",
+    ].filter(Boolean);
+
+    if (appliedCount > 0) {
+      setNotice(
+        skippedCount
+          ? `Applied ${appliedCount} AI action${appliedCount === 1 ? "" : "s"}; skipped ${skippedParts.join(", ")}`
+          : `Applied ${appliedCount} AI action${appliedCount === 1 ? "" : "s"}`,
+      );
+    } else if (skippedCount > 0) {
+      setNotice(`AI suggested edits, but none applied (${skippedParts.join(", ")})`);
+    } else {
+      setNotice("AI returned no actionable edits");
     }
 
     setAiEditResult(result);
@@ -3325,6 +4251,32 @@ function App() {
     setNotice("Downloaded project file");
   }
 
+  function applyExportPresetTarget(preset) {
+    if (preset.id === "custom") {
+      setNotice("Custom export target keeps the current board");
+      return;
+    }
+
+    stageRecoveryDraft(`Applied export preset ${preset.title}`);
+    applyProjectChange(applyExportPreset(project, preset), {
+      notice: `Applied ${preset.title} target`,
+    });
+
+    setExportPresetId(preset.id);
+
+    if (preset.scale) {
+      setExportScale(preset.scale);
+    }
+
+    if (typeof preset.transparent === "boolean") {
+      setTransparentExport(preset.transparent);
+    }
+  }
+
+  function applySelectedExportPreset() {
+    applyExportPresetTarget(selectedExportPreset);
+  }
+
   async function copyCitationBundle() {
     const citations = collectProjectCitations(project);
 
@@ -3342,8 +4294,22 @@ function App() {
     }
   }
 
+  function exportReviewBundle() {
+    const reviewBundle = buildReviewBundleText(project, {
+      comparison: snapshotComparison,
+      exportPreset: selectedExportPreset.id === "custom" ? null : selectedExportPreset,
+    });
+
+    downloadText(
+      buildExportFilename(`${project.name || "helixcanvas-figure"}-review`, "md"),
+      reviewBundle,
+      "text/markdown;charset=utf-8",
+    );
+    setNotice("Downloaded review bundle");
+  }
+
   function resetProject() {
-    projectFileHandleRef.current = null;
+    clearProjectFileSessionOrigin();
     replaceProjectWorkspace(createStarterProject(), {
       notice: "Reset to starter project",
       stageReason: "Reset the current workspace",
@@ -3580,6 +4546,16 @@ function App() {
           },
         ]
       : []),
+    ...STARTER_TEMPLATES.map((starterTemplate) => ({
+      id: `starter-template-${starterTemplate.id}`,
+      title: `Load starter: ${starterTemplate.title}`,
+      subtitle: starterTemplate.description,
+      keywords: `${starterTemplate.tags.join(" ")} ${starterTemplate.domain} starter template`,
+      run: () => {
+        closeCommandPalette();
+        loadStarterTemplate(starterTemplate);
+      },
+    })),
     ...DOMAIN_STARTER_KITS.map((starterKit) => ({
       id: `starter-kit-${starterKit.id}`,
       title: `Load starter kit: ${starterKit.title}`,
@@ -3590,6 +4566,66 @@ function App() {
         applyStarterKit(starterKit);
       },
     })),
+    ...FIGURE_FLOWS.map((flow) => ({
+      id: `figure-flow-${flow.id}`,
+      title: `Build ${flow.title}`,
+      subtitle: flow.description,
+      keywords: `${flow.domain} ${flow.focusQuery} guided builder figure flow`,
+      run: () => {
+        closeCommandPalette();
+        generateFigureFlow(flow);
+      },
+    })),
+    ...SCIENTIFIC_BUILDERS.map((builder) => ({
+      id: `scientific-builder-${builder.id}`,
+      title: `Insert ${builder.title}`,
+      subtitle: builder.description,
+      keywords: `${builder.tags.join(" ")} ${builder.focusQuery} ${builder.variants.map((variant) => variant.title).join(" ")} scientific builder scaffold`,
+      run: () => {
+        closeCommandPalette();
+        insertScientificBuilder(builder);
+      },
+    })),
+    ...DOMAIN_PRESETS.map((preset) => ({
+      id: `domain-preset-${preset.id}`,
+      title: `Load preset: ${preset.title}`,
+      subtitle: preset.description,
+      keywords: `${preset.flowId} ${preset.themeId} domain preset scaffold`,
+      run: () => {
+        closeCommandPalette();
+        loadDomainPreset(preset);
+      },
+    })),
+    ...FIGURE_THEMES.map((theme) => ({
+      id: `theme-${theme.id}`,
+      title: `Apply theme: ${theme.title}`,
+      subtitle: theme.description,
+      keywords: `${theme.id} palette style theme`,
+      run: () => {
+        closeCommandPalette();
+        applyThemeToCurrentProject(theme);
+      },
+    })),
+    ...EXPORT_PRESETS.filter((preset) => preset.id !== "custom").map((preset) => ({
+      id: `export-preset-${preset.id}`,
+      title: `Apply export target: ${preset.title}`,
+      subtitle: preset.description,
+      keywords: `${preset.id} export target board size`,
+      run: () => {
+        closeCommandPalette();
+        applyExportPresetTarget(preset);
+      },
+    })),
+    {
+      id: "export-review-bundle",
+      title: "Export review bundle",
+      subtitle: "Download a markdown bundle with summary, review notes, and citations",
+      keywords: "review export markdown bundle notes citations",
+      run: () => {
+        closeCommandPalette();
+        exportReviewBundle();
+      },
+    },
   ];
   const paletteQuery = commandPaletteQuery.trim().toLowerCase();
   const visiblePaletteCommands = rawPaletteCommands.filter((command, index) => {
@@ -3751,6 +4787,9 @@ function App() {
                 Resetting the workspace or opening another file keeps the previous draft here so you can recover it.
               </p>
             )}
+            {persistenceMessage ? (
+              <p className="helper-copy helper-copy--warning">{persistenceMessage}</p>
+            ) : null}
             <input
               ref={projectImportInputRef}
               type="file"
@@ -3816,6 +4855,7 @@ function App() {
                     Clear
                   </button>
                 </div>
+                <p className="helper-copy">{snapshotComparison.narrative}</p>
                 <div className="comparison-grid">
                   <article>
                     <strong>
@@ -3896,6 +4936,30 @@ function App() {
                     </div>
                   </div>
                 ) : null}
+                {snapshotComparison.resolvedComments?.length ? (
+                  <div className="comparison-card__section">
+                    <strong>Resolved review notes</strong>
+                    <div className="ai-list">
+                      {snapshotComparison.resolvedComments.map((item) => (
+                        <div key={item} className="ai-list__item">
+                          {item}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {snapshotComparison.reopenedComments?.length ? (
+                  <div className="comparison-card__section">
+                    <strong>Reopened review notes</strong>
+                    <div className="ai-list">
+                      {snapshotComparison.reopenedComments.map((item) => (
+                        <div key={item} className="ai-list__item">
+                          {item}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="stack-row">
                   <button
                     type="button"
@@ -3903,6 +4967,13 @@ function App() {
                     onClick={() => branchFromSnapshot(compareSnapshot)}
                   >
                     Branch from baseline
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={exportReviewBundle}
+                  >
+                    Export review bundle
                   </button>
                   <button
                     type="button"
@@ -3978,6 +5049,16 @@ function App() {
             </p>
             <div className="inspector-grid">
               <label>
+                Export target
+                <select value={exportPresetId} onChange={(event) => setExportPresetId(event.target.value)}>
+                  {EXPORT_PRESETS.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
                 Raster scale
                 <select value={exportScale} onChange={(event) => setExportScale(Number(event.target.value))}>
                   <option value="1">1x</option>
@@ -3997,6 +5078,9 @@ function App() {
               </label>
             </div>
             <div className="stack-row">
+              <button type="button" className="secondary-button" onClick={applySelectedExportPreset}>
+                Apply target
+              </button>
               <button
                 type="button"
                 className="primary-button"
@@ -4016,8 +5100,12 @@ function App() {
               <button type="button" className="ghost-button" onClick={exportProjectSvg}>
                 Download SVG
               </button>
+              <button type="button" className="ghost-button" onClick={exportReviewBundle}>
+                Review bundle
+              </button>
             </div>
             <div className="library-summary">
+              <span>{selectedExportPreset.title}</span>
               <span>{project.board.width} × {project.board.height} board</span>
               <span>{exportScale}x raster output</span>
               <span>{transparentExport ? "PNG alpha on" : "Opaque export"}</span>
@@ -4025,6 +5113,11 @@ function App() {
             <p className="helper-copy">
               PDF export uses a white page when transparency is enabled, since PDF raster export is flattened for broad compatibility.
             </p>
+            {selectedExportPreset.id !== "custom" ? (
+              <p className="helper-copy">
+                {selectedExportPreset.description}
+              </p>
+            ) : null}
           </div>
 
           <div className="panel">
@@ -4083,6 +5176,229 @@ function App() {
                   No saved components yet. Select a motif or pathway cluster and save it here for reuse.
                 </p>
               )}
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel__head">
+              <h3>Starter templates</h3>
+              <span>{STARTER_TEMPLATES.length} guided starts</span>
+            </div>
+            <p className="helper-copy">
+              Load a concrete figure archetype when you want the biology, layout, and library focus to start in the right place immediately.
+            </p>
+            <div className="example-list">
+              {STARTER_TEMPLATES.map((starterTemplate) => (
+                <StarterTemplateCard
+                  key={starterTemplate.id}
+                  starterTemplate={starterTemplate}
+                  example={starterTemplateExamples[starterTemplate.id]}
+                  onLoad={loadStarterTemplate}
+                  onLoadExample={loadStarterTemplateExample}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel__head">
+              <h3>Domain presets</h3>
+              <span>{DOMAIN_PRESETS.length} polished starting points</span>
+            </div>
+            <p className="helper-copy">
+              Load a domain-aware preset when you want the figure type, builder scaffolds, and palette to come together in one move.
+            </p>
+            <div className="example-list">
+              {DOMAIN_PRESETS.map((preset) => (
+                <DomainPresetCard key={preset.id} preset={preset} onApply={loadDomainPreset} />
+              ))}
+            </div>
+          </div>
+
+          {selectedFigureFlow ? (
+            <div className="panel">
+              <div className="panel__head">
+                <h3>Figure flows</h3>
+                <span>{FIGURE_FLOWS.length} guided builders</span>
+              </div>
+              <p className="helper-copy">
+                Start from a real scientific figure task instead of a blank board. These flows ask for the minimum biology needed, then generate an editable scene graph and optional AI handoff.
+              </p>
+              <div className="example-list">
+                {FIGURE_FLOWS.map((flow) => (
+                  <FigureFlowCard
+                    key={flow.id}
+                    flow={flow}
+                    active={flow.id === selectedFigureFlow.id}
+                    onSelect={selectFigureFlow}
+                    onLoadExample={loadFigureFlowExample}
+                  />
+                ))}
+              </div>
+              <div className="figure-flow-form">
+                <div className="panel__head">
+                  <h4>{selectedFigureFlow.title}</h4>
+                  <span>{selectedFigureFlow.domain}</span>
+                </div>
+                <p className="helper-copy">{selectedFigureFlow.starterPrompt}</p>
+                <div className="figure-flow-field-grid">
+                  {selectedFigureFlow.questions.map((field) => (
+                    <label
+                      key={field.id}
+                      className={field.type === "textarea" ? "figure-flow-field figure-flow-field--full" : "figure-flow-field"}
+                    >
+                      {field.label}
+                      {field.type === "textarea" ? (
+                        <textarea
+                          value={selectedFigureFlowAnswers[field.id] ?? ""}
+                          onChange={(event) =>
+                            updateFigureFlowAnswer(selectedFigureFlow.id, field.id, event.target.value)
+                          }
+                          placeholder={field.defaultValue}
+                        />
+                      ) : (
+                        <input
+                          className="text-input"
+                          value={selectedFigureFlowAnswers[field.id] ?? ""}
+                          onChange={(event) =>
+                            updateFigureFlowAnswer(selectedFigureFlow.id, field.id, event.target.value)
+                          }
+                          placeholder={field.defaultValue}
+                        />
+                      )}
+                    </label>
+                  ))}
+                </div>
+                <div className="library-summary">
+                  <span>{selectedFigureFlow.templateId}</span>
+                  <span>{selectedFigureFlow.preferredSourceBucket}</span>
+                  <span>{selectedFigureFlow.focusQuery}</span>
+                  {selectedFigureFlowExample ? <span>{selectedFigureFlowExample.title}</span> : null}
+                </div>
+                <div className="stack-row">
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={() => generateFigureFlow(selectedFigureFlow)}
+                  >
+                    Build figure
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => draftFigureFlowWithAi(selectedFigureFlow)}
+                    disabled={aiBusy.planning}
+                  >
+                    {aiBusy.planning ? "Drafting..." : "AI draft from flow"}
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => resetFigureFlowAnswers(selectedFigureFlow.id)}
+                  >
+                    Reset fields
+                  </button>
+                  {selectedFigureFlowExample ? (
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={() => loadFigureFlowExample(selectedFigureFlow)}
+                    >
+                      Open example
+                    </button>
+                  ) : null}
+                </div>
+                {selectedFigureFlowResult ? (
+                  <div className="ai-summary">
+                    <div className="panel__head">
+                      <h4>Latest build</h4>
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() =>
+                          copyTextValue(
+                            selectedFigureFlowResult.captionDraft,
+                            "Copied figure-flow caption draft",
+                          )
+                        }
+                      >
+                        Copy caption
+                      </button>
+                    </div>
+                    <p>{selectedFigureFlowResult.summary}</p>
+                    <div className="ai-pill-row">
+                      <span className="ai-pill">{selectedFigureFlowResult.matchedAssets.length} matched assets</span>
+                      <span className="ai-pill">
+                        {selectedFigureFlowResult.missingAssetQueries.length} open searches
+                      </span>
+                    </div>
+                    {selectedFigureFlowResult.matchedAssets.length ? (
+                      <div className="ai-list">
+                        {selectedFigureFlowResult.matchedAssets.map((match) => (
+                          <div key={`${match.role}-${match.assetId}`} className="ai-list__item">
+                            {match.role}: {match.title} · {match.sourceLabel}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    {selectedFigureFlowResult.missingAssetQueries.length ? (
+                      <div className="ai-list">
+                        {selectedFigureFlowResult.missingAssetQueries.map((item) => (
+                          <div key={`${item.role}-${item.query}`} className="ai-list__item">
+                            Search next: {item.role} · {item.query}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    <p className="helper-copy">Next step: {selectedFigureFlowResult.nextStep}</p>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="panel">
+            <div className="panel__head">
+              <h3>Scientific builders</h3>
+              <span>{SCIENTIFIC_BUILDERS.length} insertable scaffolds</span>
+            </div>
+            <p className="helper-copy">
+              Drop in membrane lanes, compartment maps, assay strips, and timelines without rebuilding the scientific structure from scratch.
+            </p>
+            <div className="example-list">
+              {SCIENTIFIC_BUILDERS.map((builder) => (
+                <ScientificBuilderCard
+                  key={builder.id}
+                  builder={builder}
+                  styleOptions={SCIENTIFIC_BUILDER_STYLES}
+                  selectedStyleId={getScientificBuilderInsertOptions(builder.id).styleId}
+                  selectedVariantId={getScientificBuilderInsertOptions(builder.id).variantId}
+                  onChangeStyle={(builderId, styleId) => updateScientificBuilderOption(builderId, { styleId })}
+                  onChangeVariant={(builderId, variantId) => updateScientificBuilderOption(builderId, { variantId })}
+                  onInsert={insertScientificBuilder}
+                  onFocusLibrary={focusScientificBuilder}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel__head">
+              <h3>Figure themes</h3>
+              <span>{FIGURE_THEMES.length} palette systems</span>
+            </div>
+            <p className="helper-copy">
+              Re-skin the current figure without rebuilding it. Themes update the board, connectors, panel frames, and card emphasis colors together.
+            </p>
+            <div className="example-list">
+              {FIGURE_THEMES.map((theme) => (
+                <FigureThemeCard
+                  key={theme.id}
+                  theme={theme}
+                  active={activeTheme?.id === theme.id}
+                  onApply={applyThemeToCurrentProject}
+                />
+              ))}
             </div>
           </div>
 
@@ -4379,6 +5695,23 @@ function App() {
                 Semantic retrieval expands biomedical aliases, so queries like <code>microscopy</code>, <code>macrophage</code>, or <code>complement</code> surface related assets even when the exact word is missing from the title.
               </p>
             ) : null}
+            {relatedSearchQueries.length ? (
+              <div className="related-searches">
+                <strong>Try next</strong>
+                <div className="ai-pill-row">
+                  {relatedSearchQueries.map((query) => (
+                    <button
+                      key={query}
+                      type="button"
+                      className="ghost-button related-search-chip"
+                      onClick={() => useRelatedSearchQuery(query)}
+                    >
+                      {query}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <AssetShelf title="Saved assets" assets={favoriteAssets} onAdd={addAssetToCanvas} />
             <AssetShelf title="Recent assets" assets={recentAssets} onAdd={addAssetToCanvas} />
             <div className="asset-grid">
@@ -4535,6 +5868,7 @@ function App() {
                 <span>Save selections as components</span>
                 <span>Grouped layers move together</span>
                 <span>Shift+arrows coarse nudge</span>
+                <span>Scientific builders seed membrane and assay scaffolds</span>
               </div>
               <div className="template-row">
                 {TEMPLATES.map((template) => (
@@ -5510,10 +6844,23 @@ function App() {
               >
                 {commentsVisible ? "Hide pins" : "Show pins"}
               </button>
+              <button type="button" className="ghost-button" onClick={exportReviewBundle}>
+                Export review
+              </button>
+            </div>
+            <div className="inspector-grid">
+              <label>
+                Filter comments
+                <select value={reviewFilter} onChange={(event) => setReviewFilter(event.target.value)}>
+                  <option value="all">All comments</option>
+                  <option value="open">Open only</option>
+                  <option value="resolved">Resolved only</option>
+                </select>
+              </label>
             </div>
             <div className="snapshot-list">
-              {positionedComments.length ? (
-                positionedComments.map(({ comment, position }, index) => (
+              {filteredComments.length ? (
+                filteredComments.map(({ comment, position }, index) => (
                   <article
                     key={comment.id}
                     className={`comment-card ${
@@ -5558,7 +6905,9 @@ function App() {
                 ))
               ) : (
                 <p className="helper-copy">
-                  No review comments yet. Add a board note for general feedback or pin one to a selected layer.
+                  {reviewFilter === "all"
+                    ? "No review comments yet. Add a board note for general feedback or pin one to a selected layer."
+                    : `No ${reviewFilter} comments right now.`}
                 </p>
               )}
             </div>

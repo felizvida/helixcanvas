@@ -41,6 +41,12 @@ The project is being shaped as a public-good tool rather than a commercial SaaS 
 - Source-aware built-in asset packs with pack validation, license strategy, and provenance metadata
 - Bioicons search plus Servier-derived vectors, Servier originals, and safe user-owned imports
 - Real biology example figures and tutorial artifacts for signaling, CRISPR workflow, and retinal degeneration
+- Guided Figure Flows for signaling, methods workflows, and microscopy comparisons with structured prompts and AI handoff
+- Starter-template gallery for oncology, immunology, microscopy, neuroscience, infection, and neutral workflow boards
+- Insertable scientific builders for membrane pathways, compartment maps, assay strips, and timecourse timelines, now with domain-aware variants and style presets
+- One-click domain presets that combine guided flows, scientific scaffolds, builder variants, and figure themes
+- Figure themes plus related-search suggestions for faster refinement once a project is in motion
+- Export targets for manuscript, slides, and poster work plus downloadable review bundles
 - Multi-select, marquee selection, grouping, alignment guides, align/distribute, reorder, lock, and hide controls
 - Panel-layout presets, legend blocks, callout blocks, scale bars, and reusable components
 - Local project open/save, recovery drafts, named local snapshots, snapshot compare, and figure branching
@@ -50,6 +56,7 @@ The project is being shaped as a public-good tool rather than a commercial SaaS 
 - Optional AI brief-to-plan drafting, edit-by-instruction, and figure critique with the API key kept on the server
 - Command palette workflow for fast local actions and AI-powered figure edits
 - Installable offline-ready app shell with service-worker caching for local-first use
+- Desktop packaging for macOS with a branded app icon plus native open/save dialogs
 
 ## Why It Feels Different
 
@@ -97,6 +104,15 @@ npm install
 npm run dev
 ```
 
+Optional desktop build on macOS:
+
+```bash
+npm run build:desktop-icon
+npm run desktop:dir
+```
+
+That produces a packaged app bundle in `dist-desktop/mac-arm64/HelixCanvas.app` with native project-file open/save dialogs.
+
 5. Optionally configure AI:
 
 ```bash
@@ -129,6 +145,12 @@ GitHub Actions runs the same checks on pushes to `main` and on pull requests thr
 
 - `src/App.jsx` — main editor experience and local-first workflow
 - `src/lib/editorSelection.js` — selection, marquee, alignment, and guide helpers
+- `src/lib/domainPresets.js` — one-click preset recipes that combine flows, themes, and scaffolds
+- `src/data/starterTemplates.js` — curated starter-template entry points for concrete figure archetypes
+- `src/lib/figureFlows.js` — guided figure-builder definitions and scene-graph generation
+- `src/lib/figureThemes.js` — palette systems and current-figure restyling helpers
+- `src/lib/scientificBuilders.js` — insertable scientific scaffold blocks with configurable variants and style presets
+- `src/lib/exportPresets.js` — manuscript, slides, and poster export target helpers
 - `src/lib/layoutPresets.js` — manuscript panel layout logic
 - `src/lib/projectFiles.js` — local project file helpers and validation
 - `src/lib/projectSnapshots.js` — named local checkpoints
@@ -154,12 +176,23 @@ GitHub Actions runs the same checks on pushes to `main` and on pull requests thr
 - `server/index.mjs` — local API server and production host
 - `server/aiService.mjs` — OpenAI orchestration and structured output contracts
 
+### Desktop
+
+- `desktop/main.cjs` — Electron shell, embedded local server startup, and native file dialogs
+- `desktop/preload.cjs` — safe desktop bridge for project-file open/save
+- `scripts/build-desktop-icon.sh` — macOS icon generation from the shared SVG brand asset
+
 ## Roadmap Right Now
 
 The repo has already moved beyond “blank-canvas prototype” territory. The active push now is to finish the highest-leverage parity work while keeping the open-source differentiators strong.
 
 Current focus:
 
+- guided figure builders that reduce blank-canvas work for common scientific figure types
+- reusable scientific scaffolds for membranes, compartments, assay lanes, and timelines
+- richer starter templates and more domain-specific figure presets
+- domain presets and tasteful figure themes that get users to a polished first draft faster
+- better export targets and review bundles for real coauthor and PI handoff
 - richer scientific builders and smarter templates
 - stronger export presets for paper, slide, and poster workflows
 - better retrieval, starter kits, and pack discovery
