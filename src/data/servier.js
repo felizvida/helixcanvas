@@ -45,6 +45,18 @@ export const SOURCE_POLICIES = [
     ],
     href: "https://figurelabs.vercel.app/",
   },
+  {
+    id: "openai-image",
+    title: "OpenAI Image generation",
+    summary:
+      "Optional user-generated content lane powered by the local OpenAI API key. Generated images are treated as user-owned project assets, not bundled open-library material.",
+    notes: [
+      "The prompt, model, and generation settings should stay with the asset for review.",
+      "Generated content should be checked for scientific accuracy before publication.",
+      "HelixCanvas keeps the API key on the local server and stores the resulting image in the user's workspace.",
+    ],
+    href: "https://developers.openai.com/api/docs/guides/image-generation",
+  },
 ];
 
 export const SERVIER_ORIGINALS = [

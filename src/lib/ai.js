@@ -48,3 +48,15 @@ export async function requestFigureEdit(input) {
 
   return parseJsonResponse(response);
 }
+
+export async function requestGeneratedImage(input) {
+  const response = await fetch("/api/ai/image", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+
+  return parseJsonResponse(response);
+}

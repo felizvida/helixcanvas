@@ -182,7 +182,7 @@ export const EXAMPLE_PROJECTS = [
         olive: "#90a85f",
       },
       nodes: [
-        textNode("EGFR to ERK signaling in NSCLC", 94, 62, 520, {
+        textNode("EGFR to ERK signaling in NSCLC", 94, 62, 900, {
           fontSize: 34,
           fontWeight: 700,
           color: "#12232e",
@@ -190,7 +190,7 @@ export const EXAMPLE_PROJECTS = [
         textNode(
           "Use this as a fast starting point for pathway figures, drug-response schematics, or graphical abstracts.",
           94,
-          92,
+          116,
           720,
         ),
         assetNode(SHARED_ASSETS.cellComplete, 86, 160, 360, 360),
@@ -268,7 +268,7 @@ export const EXAMPLE_PROJECTS = [
         olive: "#7a8f3d",
       },
       nodes: [
-        textNode("RELA CRISPR knockout workflow", 94, 62, 480, {
+        textNode("RELA CRISPR knockout workflow", 94, 62, 900, {
           fontSize: 34,
           fontWeight: 700,
           color: "#1f2933",
@@ -276,7 +276,7 @@ export const EXAMPLE_PROJECTS = [
         textNode(
           "Real biological problem: test whether RELA loss dampens TNF-alpha-driven NF-kappaB activation in macrophages.",
           94,
-          92,
+          116,
           760,
         ),
         cardNode("1. Design sgRNA", 92, 176, 210, 70, "#d2edf5", "#155e75", "#1f2933"),
@@ -359,7 +359,7 @@ export const EXAMPLE_PROJECTS = [
         olive: "#9ab87a",
       },
       nodes: [
-        textNode("Complement deposition in retinal degeneration", 94, 62, 620, {
+        textNode("Complement deposition in retinal degeneration", 94, 62, 960, {
           fontSize: 34,
           fontWeight: 700,
           color: "#16212c",
@@ -367,7 +367,7 @@ export const EXAMPLE_PROJECTS = [
         textNode(
           "Real biological problem: connect local tissue anatomy to photoreceptor stress, complement tagging, and inflammatory cell recruitment.",
           94,
-          92,
+          116,
           780,
         ),
         assetNode(SHARED_ASSETS.retina, 84, 168, 360, 470),

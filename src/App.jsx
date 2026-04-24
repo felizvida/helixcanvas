@@ -4,7 +4,13 @@ import { EXAMPLE_PROJECTS } from "./data/exampleProjects.js";
 import { DOMAIN_STARTER_KITS } from "./data/domainStarterKits.js";
 import { STARTER_TEMPLATES } from "./data/starterTemplates.js";
 import { TEMPLATES } from "./data/templates.js";
-import { fetchAiHealth, requestFigureCritique, requestFigureEdit, requestFigurePlan } from "./lib/ai.js";
+import {
+  fetchAiHealth,
+  requestFigureCritique,
+  requestFigureEdit,
+  requestFigurePlan,
+  requestGeneratedImage,
+} from "./lib/ai.js";
 import { applyAppBaseToPacks, resolveAppUrl } from "./lib/appPaths.js";
 import {
   createBioiconsCommunityPack,
@@ -143,6 +149,7 @@ const SOURCE_FILTERS = [
   { id: "servier-vector", label: "Servier vectors" },
   { id: "servier-original", label: "Servier originals" },
   { id: "figurelabs-import", label: "FigureLabs imports" },
+  { id: "ai-generated", label: "AI generated" },
 ];
 
 const SORT_OPTIONS = [
@@ -182,6 +189,34 @@ const HERO_KPIS = [
   { label: "Servier vectors", value: "1.3K+" },
   { label: "Official PPT kits", value: "50" },
   { label: "Guided examples", value: `${EXAMPLE_PROJECTS.length}` },
+];
+
+const IMAGE_GENERATION_STYLES = [
+  { id: "publication-vector", label: "Publication vector" },
+  { id: "graphical-abstract", label: "Graphical abstract" },
+  { id: "mechanism-panel", label: "Mechanism panel" },
+  { id: "microscopy-inspired", label: "Microscopy inspired" },
+];
+
+const IMAGE_GENERATION_SIZES = [
+  { id: "1024x1024", label: "Square 1024" },
+  { id: "1536x1024", label: "Landscape 1536" },
+  { id: "1024x1536", label: "Portrait 1536" },
+  { id: "2048x1152", label: "2K wide" },
+  { id: "auto", label: "Auto" },
+];
+
+const IMAGE_GENERATION_QUALITIES = [
+  { id: "medium", label: "Medium" },
+  { id: "low", label: "Low draft" },
+  { id: "high", label: "High" },
+  { id: "auto", label: "Auto" },
+];
+
+const IMAGE_GENERATION_FORMATS = [
+  { id: "png", label: "PNG" },
+  { id: "jpeg", label: "JPEG" },
+  { id: "webp", label: "WebP" },
 ];
 
 function createId(prefix) {
@@ -343,6 +378,54 @@ function formatDisplayCategory(category) {
   }
 
   return category;
+}
+
+function titleFromPrompt(prompt) {
+  const normalized = String(prompt ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) {
+    return "Generated biomedical asset";
+  }
+
+  return normalized.length > 54 ? `${normalized.slice(0, 51)}...` : normalized;
+}
+
+function createGeneratedImageAsset(image) {
+  const title = titleFromPrompt(image.prompt);
+  const createdTime = Number(image.created);
+  const createdLabel = Number.isFinite(createdTime)
+    ? new Date(createdTime * 1000).toISOString()
+    : new Date().toISOString();
+
+  return {
+    id: createId("generated"),
+    title,
+    searchText: `${title} ${image.prompt ?? ""} generated ai openai image biomedical illustration`,
+    category: "AI generated",
+    categoryLabel: "AI generated",
+    sourceBucket: "ai-generated",
+    sourceLabel: "OpenAI Image 2",
+    originLabel: image.model ?? "gpt-image-2",
+    assetType: "png",
+    assetFormat: image.outputFormat ?? "png",
+    assetUrl: image.dataUrl,
+    previewUrl: image.dataUrl,
+    sourcePage: "https://developers.openai.com/api/docs/guides/image-generation",
+    licenseLabel: "User generated",
+    licenseUrl: "",
+    citation: `Generated with ${image.model ?? "gpt-image-2"} via the OpenAI Image API on ${createdLabel}. Prompt: ${image.prompt ?? "No prompt recorded"}`,
+    generation: {
+      provider: "OpenAI",
+      model: image.model ?? "gpt-image-2",
+      prompt: image.prompt ?? "",
+      size: image.size ?? "",
+      quality: image.quality ?? "",
+      outputFormat: image.outputFormat ?? "png",
+      createdAt: createdLabel,
+    },
+  };
 }
 
 function makeAssetNode(asset, position = { x: 160, y: 180 }) {
@@ -1349,6 +1432,7 @@ function App() {
     checking: true,
     configured: false,
     model: "",
+    imageModel: "",
     error: "",
   });
   const [aiPlan, setAiPlan] = useState(null);
@@ -1368,10 +1452,19 @@ function App() {
   const [componentLabel, setComponentLabel] = useState("");
   const [aiEditPrompt, setAiEditPrompt] = useState("");
   const [aiEditResult, setAiEditResult] = useState(null);
+  const [aiImagePrompt, setAiImagePrompt] = useState(
+    "A clean vector-style illustration of EGFR receptors on a cancer cell membrane activating a MAPK signaling cascade, no fake data, no watermark",
+  );
+  const [aiImageStyle, setAiImageStyle] = useState("publication-vector");
+  const [aiImageSize, setAiImageSize] = useState("1024x1024");
+  const [aiImageQuality, setAiImageQuality] = useState("medium");
+  const [aiImageFormat, setAiImageFormat] = useState("png");
+  const [lastGeneratedAsset, setLastGeneratedAsset] = useState(null);
   const [aiBusy, setAiBusy] = useState({
     planning: false,
     critique: false,
     editing: false,
+    generatingImage: false,
   });
   const [exportScale, setExportScale] = useState(2);
   const [transparentExport, setTransparentExport] = useState(false);
@@ -1672,6 +1765,7 @@ function App() {
           checking: false,
           configured: Boolean(payload.configured),
           model: payload.model ?? "",
+          imageModel: payload.imageModel ?? "",
           error: "",
         });
       })
@@ -1680,6 +1774,7 @@ function App() {
           checking: false,
           configured: false,
           model: "",
+          imageModel: "",
           error: error instanceof Error ? error.message : "AI service unavailable.",
         });
       });
@@ -3961,6 +4056,59 @@ function App() {
     }
   }
 
+  async function generateImageWithAi(overridePrompt = "") {
+    const prompt = (overridePrompt || aiImagePrompt).trim();
+
+    if (!prompt) {
+      setNotice("Add an image prompt first");
+      return;
+    }
+
+    if (!aiStatus.configured) {
+      setNotice(aiStatus.error || "AI image generation is unavailable until the server is configured");
+      return;
+    }
+
+    setAiBusy((current) => ({ ...current, generatingImage: true }));
+
+    try {
+      const response = await requestGeneratedImage({
+        prompt,
+        stylePreset: aiImageStyle,
+        size: aiImageSize,
+        quality: aiImageQuality,
+        outputFormat: aiImageFormat,
+      });
+      const asset = createGeneratedImageAsset(response.image);
+      const newNode = makeAssetNode(asset, {
+        x: 150 + project.nodes.length * 12,
+        y: 150 + project.nodes.length * 8,
+      });
+
+      setImportedAssets((current) => [asset, ...current]);
+      setLastGeneratedAsset(asset);
+      setLibraryQuery("");
+      setSourceFilter("ai-generated");
+      setPackFilter("all");
+      setCategoryFilter("all");
+      registerAssetUsage(asset);
+      applyProjectChange(
+        (current) => ({
+          ...current,
+          nodes: [...current.nodes, newNode],
+        }),
+        {
+          selection: createNodeSelection([newNode.id]),
+          notice: "Generated and placed an OpenAI Image 2 asset",
+        },
+      );
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "AI image generation failed");
+    } finally {
+      setAiBusy((current) => ({ ...current, generatingImage: false }));
+    }
+  }
+
   function focusSuggestionSearch(suggestion) {
     setLibraryQuery(suggestion.query);
     setSourceFilter(suggestion.preferredSourceBucket);
@@ -4398,6 +4546,8 @@ function App() {
     ? describeSourcePolicy(
         selectedNode.sourceBucket === "figurelabs-import"
           ? "figurelabs"
+          : selectedNode.sourceBucket === "ai-generated"
+            ? "openai-image"
           : selectedNode.sourceBucket === "servier-original" ||
               selectedNode.sourceBucket === "servier-vector"
             ? "servier"
@@ -4439,6 +4589,24 @@ function App() {
       run: () => {
         closeCommandPalette();
         critiqueWithAi();
+      },
+    },
+    {
+      id: "ai-image-generate",
+      title: commandPaletteQuery.trim()
+        ? `Generate image: ${commandPaletteQuery.trim()}`
+        : "Generate OpenAI Image 2 content",
+      subtitle: "Create a provenance-tagged image asset and place it on the canvas",
+      keywords: "ai image generate openai gpt-image-2 content asset illustration",
+      run: () => {
+        const prompt = commandPaletteQuery.trim();
+
+        if (prompt) {
+          setAiImagePrompt(prompt);
+        }
+
+        closeCommandPalette();
+        generateImageWithAi(prompt);
       },
     },
     {
@@ -4730,7 +4898,7 @@ function App() {
 
       <section className="workspace">
         <aside className="workspace__sidebar">
-          <div className="panel">
+          <div className="panel project-panel">
             <div className="panel__head">
               <h3>Local project</h3>
               <span>{hasUnsavedChanges ? "Unsaved edits" : "Saved locally"}</span>
@@ -5448,7 +5616,7 @@ function App() {
             </div>
           </div>
 
-          <div className="panel">
+          <div className="panel ai-copilot-panel">
             <div className="panel__head">
               <h3>AI copilot</h3>
               <span>{aiStatus.checking ? "Checking server" : aiStatus.configured ? aiStatus.model : "Offline"}</span>
@@ -5514,6 +5682,84 @@ function App() {
               >
                 Open command palette
               </button>
+            </div>
+            <div className="ai-image-studio">
+              <div className="panel__head">
+                <h4>OpenAI Image 2 content</h4>
+                <span>{aiStatus.imageModel ?? "gpt-image-2"}</span>
+              </div>
+              <label>
+                Generate a figure element
+                <textarea
+                  value={aiImagePrompt}
+                  onChange={(event) => setAiImagePrompt(event.target.value)}
+                  placeholder="Describe a reusable biomedical visual element, panel backdrop, or graphical-abstract component"
+                />
+              </label>
+              <div className="inspector-grid">
+                <label>
+                  Style
+                  <select value={aiImageStyle} onChange={(event) => setAiImageStyle(event.target.value)}>
+                    {IMAGE_GENERATION_STYLES.map((style) => (
+                      <option key={style.id} value={style.id}>
+                        {style.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Size
+                  <select value={aiImageSize} onChange={(event) => setAiImageSize(event.target.value)}>
+                    {IMAGE_GENERATION_SIZES.map((size) => (
+                      <option key={size.id} value={size.id}>
+                        {size.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Quality
+                  <select value={aiImageQuality} onChange={(event) => setAiImageQuality(event.target.value)}>
+                    {IMAGE_GENERATION_QUALITIES.map((quality) => (
+                      <option key={quality.id} value={quality.id}>
+                        {quality.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Format
+                  <select value={aiImageFormat} onChange={(event) => setAiImageFormat(event.target.value)}>
+                    {IMAGE_GENERATION_FORMATS.map((format) => (
+                      <option key={format.id} value={format.id}>
+                        {format.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="stack-row">
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={generateImageWithAi}
+                  disabled={aiBusy.generatingImage || !aiStatus.configured}
+                >
+                  {aiBusy.generatingImage ? "Generating..." : "Generate and place"}
+                </button>
+                <span className="status-pill">
+                  {aiStatus.configured ? "Stored as user-generated asset" : "Needs OPENAI_API_KEY"}
+                </span>
+              </div>
+              {lastGeneratedAsset ? (
+                <div className="ai-generated-preview">
+                  <img src={lastGeneratedAsset.previewUrl} alt={lastGeneratedAsset.title} />
+                  <div>
+                    <strong>{lastGeneratedAsset.title}</strong>
+                    <span>{lastGeneratedAsset.originLabel}</span>
+                  </div>
+                </div>
+              ) : null}
             </div>
             {aiPlan ? (
               <div className="ai-summary">

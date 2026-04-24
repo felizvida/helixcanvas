@@ -120,6 +120,7 @@ Publication-ready figures need hierarchy, restraint, clarity, and credibility. T
 - asset search query generation
 - caption drafting
 - critique of current board clarity and provenance posture
+- optional OpenAI Image 2 content generation for user-owned figure elements, panel backdrops, and graphical-abstract components
 
 ## Why FigureLabs Is Import-Only
 
@@ -132,9 +133,12 @@ flowchart LR
     A["Research brief"] --> B["React editor"]
     B --> C["Local API server"]
     C --> D["OpenAI Responses API"]
+    C --> I["OpenAI Image API"]
     D --> C
     C --> E["Structured figure plan / critique"]
+    I --> J["Generated bitmap asset + prompt metadata"]
     E --> B
+    J --> B
     B --> F["Local asset matching"]
     F --> G["Canvas composition"]
     G --> H["SVG / JSON / attribution export"]
@@ -154,11 +158,14 @@ flowchart LR
 
 ### AI layer
 
-- uses the OpenAI Responses API
-- returns **structured JSON**, not free-form prose
-- supports two primary contracts:
+- uses the OpenAI Responses API for planning, critique, and structured scene edits
+- uses the OpenAI Image API with `gpt-image-2` by default for optional visual content generation
+- returns **structured JSON** for figure logic, not free-form prose
+- supports four primary contracts:
   - figure planning
   - figure critique
+  - instruction-to-scene edits
+  - generated image asset creation
 - is optional rather than required for baseline usage
 
 ### Asset pipeline
@@ -184,7 +191,11 @@ The API key never enters the browser runtime.
 
 The AI returns typed figure plans and critiques that the app can render predictably. That makes AI outputs safer to operationalize inside a design tool.
 
-### 3. Deterministic application behavior
+### 3. Generated content provenance
+
+OpenAI Image 2 outputs are saved as user-generated project assets with the model, prompt, size, quality, and generation timestamp preserved. They are not treated as bundled open-library assets.
+
+### 4. Deterministic application behavior
 
 The client, not the model, decides how to apply a plan to the canvas, how to match assets locally, and how exports are produced. This preserves trust and debuggability.
 
@@ -193,7 +204,7 @@ The client, not the model, decides how to apply a plan to the canvas, how to mat
 HelixCanvas is not trying to outdo specialized scientific illustration products solely on asset volume. Its differentiation is:
 
 - openness and transparency around asset sourcing
-- optional AI integration with structured planning
+- optional AI integration with structured planning and provenance-aware generated content
 - publication-aware attribution workflow
 - extensibility for user-owned imports and future asset packs
 
@@ -220,7 +231,7 @@ Even open libraries have heterogeneous licensing. The project should continue su
 
 ### AI overreach
 
-The model must not fabricate scientific claims or overly confident annotations. Prompting and output schemas should continue to bias toward structure and restraint.
+The model must not fabricate scientific claims or overly confident annotations. Prompting, output schemas, and generated-image metadata should continue to bias toward structure, restraint, and human review.
 
 ### Asset fit quality
 

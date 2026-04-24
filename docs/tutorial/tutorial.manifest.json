@@ -9,6 +9,16 @@
       "Oncology",
       "Mechanism"
     ],
+    "level": "Beginner to intermediate",
+    "directUrl": "http://127.0.0.1:4173/?example=egfr-mapk-nsclc&focus=workspace",
+    "learningGoals": [
+      "Trace a receptor-to-nucleus signaling story on a single board.",
+      "Inspect Bioicons and Servier-derived provenance on placed assets.",
+      "Revise labels and cards without breaking citation output.",
+      "Extend a mechanism figure with inhibitor or treatment-state comparisons."
+    ],
+    "suggestedExercise": "Duplicate the receptor region to compare ligand-only and inhibitor-treated conditions, then relabel the downstream readout.",
+    "aiImagePrompt": "A clean vector-style inset showing EGFR receptors clustered on a cancer cell membrane with a subtle MAPK relay motif, no fake data, no watermark.",
     "artifacts": {
       "svg": "egfr-mapk-nsclc.svg",
       "project": "egfr-to-erk-signaling-in-nsclc.helixcanvas.json",
@@ -25,6 +35,16 @@
       "CRISPR",
       "Immunology"
     ],
+    "level": "Intermediate",
+    "directUrl": "http://127.0.0.1:4173/?example=rela-crispr-macrophage&focus=workspace",
+    "learningGoals": [
+      "Convert a wet-lab plan into a left-to-right workflow figure.",
+      "Balance model system, perturbation, stimulation, and readouts.",
+      "Use panel layouts, reusable components, and snapshots during revision.",
+      "Export a methods-ready figure with a separate attribution bundle."
+    ],
+    "suggestedExercise": "Add qPCR, ELISA, or single-cell RNA-seq as a third readout lane and compare the layout before and after with a snapshot.",
+    "aiImagePrompt": "A publication-style macrophage perturbation workflow backdrop with CRISPR knockout, TNF-alpha stimulation, and two assay readout zones, no fake charts.",
     "artifacts": {
       "svg": "rela-crispr-macrophage.svg",
       "project": "rela-crispr-knockout-workflow.helixcanvas.json",
@@ -41,6 +61,16 @@
       "Retina",
       "Pathology"
     ],
+    "level": "Intermediate to teaching use",
+    "directUrl": "http://127.0.0.1:4173/?example=retinal-complement-degeneration&focus=workspace",
+    "learningGoals": [
+      "Connect tissue anatomy, cellular stress, immune tagging, and degeneration over time.",
+      "Use color and callouts to separate biological processes.",
+      "Adapt a disease-overview figure for papers, lectures, grants, or lab meetings.",
+      "Review generated or imported content separately from open-library assets."
+    ],
+    "suggestedExercise": "Replace complement tagging with a cytokine or microglia-specific mechanism and retitle the lower card for a timecourse or treatment arm.",
+    "aiImagePrompt": "A microscopy-inspired retinal degeneration panel with photoreceptor stress and complement deposition cues, dark-field fluorescent style, no fake scale bar.",
     "artifacts": {
       "svg": "retinal-complement-degeneration.svg",
       "project": "complement-deposition-in-retinal-degeneration.helixcanvas.json",

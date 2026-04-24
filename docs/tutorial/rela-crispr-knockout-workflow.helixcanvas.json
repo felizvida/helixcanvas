@@ -1,7 +1,7 @@
 {
   "format": "helixcanvas-project",
   "version": 1,
-  "exportedAt": "2026-04-22T02:52:33.556Z",
+  "exportedAt": "2026-04-24T00:00:00.000Z",
   "project": {
     "name": "RELA CRISPR knockout workflow",
     "brief": "CRISPR perturbation workflow for testing NF-kappaB pathway suppression after TNF-alpha stimulation in macrophages.",
@@ -24,7 +24,7 @@
         "text": "RELA CRISPR knockout workflow",
         "x": 94,
         "y": 62,
-        "w": 480,
+        "w": 900,
         "fontSize": 34,
         "fontWeight": 700,
         "color": "#1f2933"
@@ -33,7 +33,7 @@
         "type": "text",
         "text": "Real biological problem: test whether RELA loss dampens TNF-alpha-driven NF-kappaB activation in macrophages.",
         "x": 94,
-        "y": 92,
+        "y": 116,
         "w": 760,
         "fontSize": 16,
         "fontWeight": 500,

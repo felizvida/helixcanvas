@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  Open libraries, provenance-first imports, optional AI planning, and export-ready composition in one workspace.
+  Open libraries, provenance-first imports, optional AI planning and image generation, and export-ready composition in one workspace.
 </p>
 
 <p align="center">
@@ -32,7 +32,7 @@ HelixCanvas is a local-first biomedical figure editor built for people who want 
 - curated **Servier Medical Art** assets and official kit links
 - a safe import lane for **user-owned FigureLabs exports**
 - a serious figure editor with layouts, exports, snapshots, and review notes
-- an **optional** server-side AI copilot for planning and critique
+- an **optional** server-side AI copilot for planning, critique, editable scene edits, and OpenAI Image 2 content generation
 
 The project is being shaped as a public-good tool rather than a commercial SaaS product. The long-term ambition is closer to an Inkscape-for-biomedical-figures than a locked-down hosted platform.
 
@@ -54,6 +54,7 @@ The project is being shaped as a public-good tool rather than a commercial SaaS 
 - Semantic asset retrieval plus domain starter kits for oncology, immunology, neuroscience, and microscopy workflows
 - SVG, PNG, PDF, JSON, and citation-bundle export paths
 - Optional AI brief-to-plan drafting, edit-by-instruction, and figure critique with the API key kept on the server
+- Optional OpenAI Image 2 generation that creates provenance-tagged, user-generated bitmap assets and places them on the canvas
 - Command palette workflow for fast local actions and AI-powered figure edits
 - Installable offline-ready app shell with service-worker caching for local-first use
 - Desktop packaging for macOS with a branded app icon plus native open/save dialogs
@@ -117,9 +118,10 @@ That produces a packaged app bundle in `dist-desktop/mac-arm64/HelixCanvas.app` 
 
 ```bash
 export OPENAI_API_KEY=your_key_here
+export HELIXCANVAS_OPENAI_IMAGE_MODEL=gpt-image-2
 ```
 
-Use [.env.example](./.env.example) as the reference for local configuration. If you skip AI setup, the editor still works and the AI controls simply stay optional.
+Use [.env.example](./.env.example) as the reference for local configuration. `HELIXCANVAS_OPENAI_IMAGE_MODEL` defaults to `gpt-image-2`; generated images are stored as user-generated local assets with prompt/model metadata instead of being folded into the bundled open libraries. If you skip AI setup, the editor still works and the AI controls simply stay optional.
 
 ## Quality Checks
 
@@ -174,7 +176,7 @@ GitHub Actions runs the same checks on pushes to `main` and on pull requests thr
 
 - `src/lib/ai.js` — browser client for local AI endpoints
 - `server/index.mjs` — local API server and production host
-- `server/aiService.mjs` — OpenAI orchestration and structured output contracts
+- `server/aiService.mjs` — OpenAI orchestration, structured output contracts, and Image API generation
 
 ### Desktop
 

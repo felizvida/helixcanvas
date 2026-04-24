@@ -3,7 +3,39 @@ import { SOURCE_POLICIES } from "../src/data/servier.js";
 import { TEMPLATES } from "../src/data/templates.js";
 
 const DEFAULT_MODEL = process.env.HELIXCANVAS_OPENAI_MODEL || "gpt-5.4";
+const DEFAULT_IMAGE_MODEL = process.env.HELIXCANVAS_OPENAI_IMAGE_MODEL || "gpt-image-2";
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+const IMAGE_QUALITIES = new Set(["auto", "low", "medium", "high"]);
+const IMAGE_OUTPUT_FORMATS = new Set(["png", "jpeg", "webp"]);
+const IMAGE_SIZES = new Set([
+  "auto",
+  "1024x1024",
+  "1536x1024",
+  "1024x1536",
+  "2048x2048",
+  "2048x1152",
+  "3840x2160",
+  "2160x3840",
+]);
+
+const IMAGE_STYLE_PRESETS = {
+  "publication-vector": [
+    "Visual mode: crisp publication-ready biomedical vector illustration.",
+    "Use clean shapes, restrained gradients, strong figure-ground contrast, and editable-looking components.",
+  ],
+  "graphical-abstract": [
+    "Visual mode: modern graphical abstract centerpiece.",
+    "Use a bold editorial composition, generous negative space, and a polished scientific-magazine look.",
+  ],
+  "mechanism-panel": [
+    "Visual mode: mechanistic pathway panel.",
+    "Use clear compartments, directional flow, biomolecule silhouettes, and space for downstream labels.",
+  ],
+  "microscopy-inspired": [
+    "Visual mode: microscopy-inspired research visual.",
+    "Use dark-field contrast, fluorescent channel aesthetics, and a clean panel-ready crop without fake scale bars.",
+  ],
+};
 
 const TEMPLATE_SUMMARY = TEMPLATES.map(
   (template) => `- ${template.id}: ${template.name} — ${template.summary}`,
@@ -242,6 +274,42 @@ function assertConfigured() {
   }
 }
 
+function sanitizeEnum(value, allowedValues, fallbackValue) {
+  return allowedValues.has(value) ? value : fallbackValue;
+}
+
+function buildBiomedicalImagePrompt({ prompt, stylePreset }) {
+  const styleLines = IMAGE_STYLE_PRESETS[stylePreset] ?? IMAGE_STYLE_PRESETS["publication-vector"];
+
+  return [
+    "Create a biomedical research illustration asset for HelixCanvas.",
+    "",
+    "User request:",
+    prompt.trim(),
+    "",
+    ...styleLines,
+    "",
+    "Scientific and design guardrails:",
+    "- Keep the visual useful as a figure component, not a complete paper figure unless explicitly requested.",
+    "- Do not invent unsupported claims, fake data, p-values, citations, gene labels, or clinical advice.",
+    "- Avoid watermarks, logos, signatures, UI chrome, and stock-photo text.",
+    "- Prefer clean composition, high readability, and tasteful modern biomedical design.",
+    "- If labels are requested, keep text sparse and large enough to edit around in the HelixCanvas scene.",
+  ].join("\n");
+}
+
+function getMimeType(outputFormat) {
+  if (outputFormat === "jpeg") {
+    return "image/jpeg";
+  }
+
+  if (outputFormat === "webp") {
+    return "image/webp";
+  }
+
+  return "image/png";
+}
+
 function extractStructuredJson(response) {
   for (const item of response.output ?? []) {
     if (item.type !== "message") {
@@ -375,6 +443,59 @@ export function getAiConfig() {
   return {
     configured: Boolean(openai),
     model: DEFAULT_MODEL,
+    imageModel: DEFAULT_IMAGE_MODEL,
+  };
+}
+
+export async function generateFigureImage({
+  prompt,
+  stylePreset = "publication-vector",
+  size = "1024x1024",
+  quality = "medium",
+  outputFormat = "png",
+} = {}) {
+  assertConfigured();
+
+  const userPrompt = typeof prompt === "string" ? prompt.trim() : "";
+
+  if (!userPrompt) {
+    throw new Error("An image prompt is required.");
+  }
+
+  const normalizedSize = sanitizeEnum(size, IMAGE_SIZES, "1024x1024");
+  const normalizedQuality = sanitizeEnum(quality, IMAGE_QUALITIES, "medium");
+  const normalizedOutputFormat = sanitizeEnum(outputFormat, IMAGE_OUTPUT_FORMATS, "png");
+  const imagePrompt = buildBiomedicalImagePrompt({ prompt: userPrompt, stylePreset });
+
+  const response = await openai.images.generate({
+    model: DEFAULT_IMAGE_MODEL,
+    prompt: imagePrompt,
+    n: 1,
+    size: normalizedSize,
+    quality: normalizedQuality,
+    output_format: normalizedOutputFormat,
+    background: "auto",
+  });
+
+  const image = response.data?.[0];
+
+  if (!image?.b64_json) {
+    throw new Error("The image model did not return base64 image data.");
+  }
+
+  const mimeType = getMimeType(normalizedOutputFormat);
+
+  return {
+    model: DEFAULT_IMAGE_MODEL,
+    prompt: userPrompt,
+    resolvedPrompt: imagePrompt,
+    size: normalizedSize,
+    quality: normalizedQuality,
+    outputFormat: normalizedOutputFormat,
+    mimeType,
+    dataUrl: `data:${mimeType};base64,${image.b64_json}`,
+    usage: response.usage ?? null,
+    created: response.created ?? null,
   };
 }
 

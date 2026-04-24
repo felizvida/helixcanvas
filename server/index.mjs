@@ -2,7 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
-import { createFigurePlan, critiqueFigureProject, editFigureProject, getAiConfig } from "./aiService.mjs";
+import {
+  createFigurePlan,
+  critiqueFigureProject,
+  editFigureProject,
+  generateFigureImage,
+  getAiConfig,
+} from "./aiService.mjs";
 
 const defaultHost = process.env.HELIXCANVAS_API_HOST || "127.0.0.1";
 const defaultPort = Number(process.env.HELIXCANVAS_API_PORT || 8787);
@@ -122,6 +128,38 @@ export function createHelixCanvasApp({ rootDir = defaultRootDir } = {}) {
         edit,
         model: getAiConfig().model,
       });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  app.post("/api/ai/image", async (req, res) => {
+    try {
+      const prompt = typeof req.body?.prompt === "string" ? req.body.prompt.trim() : "";
+
+      if (!prompt) {
+        sendError(res, new Error("An image prompt is required for content generation."), 400);
+        return;
+      }
+
+      if (!getAiConfig().configured) {
+        sendError(
+          res,
+          new Error("OPENAI_API_KEY is missing. Configure the server environment to enable image generation."),
+          503,
+        );
+        return;
+      }
+
+      const image = await generateFigureImage({
+        prompt,
+        stylePreset: req.body?.stylePreset,
+        size: req.body?.size,
+        quality: req.body?.quality,
+        outputFormat: req.body?.outputFormat,
+      });
+
+      res.json({ image });
     } catch (error) {
       sendError(res, error);
     }

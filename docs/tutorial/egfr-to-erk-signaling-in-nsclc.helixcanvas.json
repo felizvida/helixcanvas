@@ -1,7 +1,7 @@
 {
   "format": "helixcanvas-project",
   "version": 1,
-  "exportedAt": "2026-04-22T02:52:33.554Z",
+  "exportedAt": "2026-04-24T00:00:00.000Z",
   "project": {
     "name": "EGFR to ERK signaling in NSCLC",
     "brief": "EGFR activation drives the RAS-RAF-MEK-ERK cascade and immediate early transcription in epithelial tumor cells.",
@@ -24,7 +24,7 @@
         "text": "EGFR to ERK signaling in NSCLC",
         "x": 94,
         "y": 62,
-        "w": 520,
+        "w": 900,
         "fontSize": 34,
         "fontWeight": 700,
         "color": "#12232e"
@@ -33,7 +33,7 @@
         "type": "text",
         "text": "Use this as a fast starting point for pathway figures, drug-response schematics, or graphical abstracts.",
         "x": 94,
-        "y": 92,
+        "y": 116,
         "w": 720,
         "fontSize": 16,
         "fontWeight": 500,

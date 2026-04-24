@@ -1,7 +1,7 @@
 {
   "format": "helixcanvas-project",
   "version": 1,
-  "exportedAt": "2026-04-22T02:52:33.558Z",
+  "exportedAt": "2026-04-24T00:00:00.000Z",
   "project": {
     "name": "Complement deposition in retinal degeneration",
     "brief": "Retinal degeneration figure connecting tissue-level anatomy, photoreceptor stress, complement tagging, and phagocyte recruitment.",
@@ -24,7 +24,7 @@
         "text": "Complement deposition in retinal degeneration",
         "x": 94,
         "y": 62,
-        "w": 620,
+        "w": 960,
         "fontSize": 34,
         "fontWeight": 700,
         "color": "#16212c"
@@ -33,7 +33,7 @@
         "type": "text",
         "text": "Real biological problem: connect local tissue anatomy to photoreceptor stress, complement tagging, and inflammatory cell recruitment.",
         "x": 94,
-        "y": 92,
+        "y": 116,
         "w": 780,
         "fontSize": 16,
         "fontWeight": 500,
