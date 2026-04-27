@@ -96,6 +96,51 @@ http://127.0.0.1:4173/?example=rela-crispr-macrophage&focus=workspace
 http://127.0.0.1:4173/?example=retinal-complement-degeneration&focus=workspace
 ```
 
+## Editor Power Moves To Practice
+
+Use these once an example is open. They are the fastest way to understand the current editor depth.
+
+### Transform and arrange a pathway module
+
+1. Shift-click three or more related pathway objects.
+2. Use the transform box to resize or rotate the group.
+3. Try `Tidy row`, `Tidy column`, `Tidy grid`, and `Radial ring` in the batch inspector.
+4. Use `Fit board` if the selection needs to become the main figure focus.
+5. Save a snapshot before and after the layout change.
+
+### Link biology objects with smart connectors
+
+1. Shift-click two biological objects that should be connected.
+2. Click `Add connector`.
+3. Change the connector meaning to activation, inhibition, or neutral link.
+4. Change the route to `Curve`.
+5. Drag the teal bend handle on the canvas.
+6. Hold Shift while bending for clean 10-step increments.
+7. Drag an endpoint near another layer edge to re-anchor it, or hold Alt to keep it free.
+
+### Copy structure without flattening it
+
+1. Select a small pathway or workflow fragment.
+2. Press `Cmd/Ctrl+C`, then `Cmd/Ctrl+V`.
+3. Confirm that copied internal connectors, group relationships, and pinned comments remain editable.
+4. Use `Cmd/Ctrl+Shift+C` and `Cmd/Ctrl+Shift+V` to copy and paste only visual style.
+
+### Polish the visual stack
+
+1. Open the `Layer order` panel.
+2. Use per-layer `Up` and `Down` controls.
+3. Use `To front` / `To back` in the inspector for larger stack changes.
+4. Try `Cmd/Ctrl+]`, `Cmd/Ctrl+[`, `Cmd/Ctrl+Shift+]`, and `Cmd/Ctrl+Shift+[`.
+
+### Style an asset for publication
+
+1. Select an image or imported/generated asset.
+2. Set image fit to `Crop to fill`.
+3. Try a rounded, circle, or hex mask.
+4. Adjust crop X/Y and zoom.
+5. Add a visual effect such as white halo or signal glow.
+6. Export SVG or PNG and confirm the crop/mask/effect is preserved.
+
 ## Tutorial 1: EGFR to ERK Signaling in NSCLC
 
 Biological problem:
@@ -120,7 +165,7 @@ Walkthrough:
 2. Select the `Ligand binding`, `Signal relay`, or `Cell response` card and edit the label to match your own pathway.
 3. Use the library search for `receptor kinase`, `nucleus`, or `transcription`.
 4. Add a matching asset to the canvas and position it near the relevant pathway step.
-5. Use `Add connector` to link the new asset to an existing step.
+5. Shift-click the new asset and an existing step, then use `Add connector` to create an anchored relationship.
 6. Save a snapshot named `EGFR baseline`.
 7. Duplicate the receptor region and relabel it as inhibitor-treated.
 8. Export SVG and copy attributions.

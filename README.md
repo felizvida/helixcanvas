@@ -47,7 +47,12 @@ The project is being shaped as a public-good tool rather than a commercial SaaS 
 - One-click domain presets that combine guided flows, scientific scaffolds, builder variants, and figure themes
 - Figure themes plus related-search suggestions for faster refinement once a project is in motion
 - Export targets for manuscript, slides, and poster work plus downloadable review bundles
-- Multi-select, marquee selection, grouping, alignment guides, align/distribute, reorder, lock, and hide controls
+- Multi-select, marquee selection, grouping, transform handles, rotation, resizing, flipping, match-size, fit-to-board, lock, and hide controls
+- Layout intelligence for selected objects: align/distribute, tidy row, tidy column, tidy grid, radial ring, and panel-placement helpers
+- Smart connectors with endpoint anchoring, activation/inhibition/link semantics, straight/elbow/curved routes, dashed/dotted styles, and on-canvas curve bending
+- Fragment and style clipboards for copying editable figure chunks or visual styling without flattening the scene
+- Layer ordering with top-first layer panel, per-layer up/down controls, one-step ordering, and front/back jumps
+- Asset crop, mask, fit, zoom, opacity, flip, and visual-effect controls with export fidelity
 - Panel-layout presets, legend blocks, callout blocks, scale bars, and reusable components
 - Local project open/save, recovery drafts, named local snapshots, snapshot compare, and figure branching
 - Inline pinned review comments that stay in the project but stay out of exports
@@ -68,6 +73,7 @@ The project is being shaped as a public-good tool rather than a commercial SaaS 
 
 ## Project Docs
 
+- [Editor guide](./docs/EDITOR_GUIDE.md)
 - [Open-source roadmap](./docs/OSS_ROADMAP.md)
 - [Personal workbench direction](./docs/PERSONAL_WORKBENCH.md)
 - [GitHub milestone plan](./docs/GITHUB_MILESTONES.md)
@@ -146,7 +152,10 @@ GitHub Actions runs the same checks on pushes to `main` and on pull requests thr
 ### Editor
 
 - `src/App.jsx` — main editor experience and local-first workflow
-- `src/lib/editorSelection.js` — selection, marquee, alignment, and guide helpers
+- `src/lib/editorSelection.js` — selection, marquee, transform, layout, layer-order, alignment, and guide helpers
+- `src/lib/connectors.js` — connector geometry, anchoring, curve bending, dash styles, and smart connector drafts
+- `src/lib/sceneClipboard.js` — editable fragment copy/cut/paste and graph-safe deletion helpers
+- `src/lib/styleClipboard.js` — layer and connector style transfer helpers
 - `src/lib/domainPresets.js` — one-click preset recipes that combine flows, themes, and scaffolds
 - `src/data/starterTemplates.js` — curated starter-template entry points for concrete figure archetypes
 - `src/lib/figureFlows.js` — guided figure-builder definitions and scene-graph generation
@@ -190,15 +199,11 @@ The repo has already moved beyond “blank-canvas prototype” territory. The ac
 
 Current focus:
 
-- guided figure builders that reduce blank-canvas work for common scientific figure types
-- reusable scientific scaffolds for membranes, compartments, assay lanes, and timelines
-- richer starter templates and more domain-specific figure presets
-- domain presets and tasteful figure themes that get users to a polished first draft faster
-- better export targets and review bundles for real coauthor and PI handoff
-- richer scientific builders and smarter templates
-- stronger export presets for paper, slide, and poster workflows
-- better retrieval, starter kits, and pack discovery
-- more tutorials, examples, and contributor-facing architecture docs
+- richer text controls for publication-specific labels, symbols, and inline scientific notation
+- deeper connector labeling and pathway semantics beyond the current activation/inhibition/link model
+- stronger retrieval, starter kits, and pack discovery across more biological domains
+- more tutorials and example projects that exercise the new editor power tools
+- contributor-facing architecture docs for editor, exports, assets, and optional AI boundaries
 
 See [docs/OSS_ROADMAP.md](./docs/OSS_ROADMAP.md) and [docs/GITHUB_MILESTONES.md](./docs/GITHUB_MILESTONES.md) for the concrete milestone structure.
 

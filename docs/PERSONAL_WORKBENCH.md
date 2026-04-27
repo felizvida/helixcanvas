@@ -60,8 +60,9 @@ That enables:
 - insertable scientific builders for membranes, compartments, assay strips, and timecourse layouts, with domain-aware variants and style presets
 - figure themes and smarter search follow-ups for faster refinement
 - export targets and review bundles that make handoff cleaner
-- richer text controls
-- stronger connector system
+- graph-aware editing with transform handles, fragment copy/paste, style transfer, layer ordering, and quick arrange tools
+- stronger connector system with endpoint anchoring, route styles, curve bending, and smart connector creation from selected layers
+- richer text controls for inline scientific notation and publication-specific labels
 - command palette and AI-native figure editing
 - snapshot compare and safe figure branching
 - semantic starter-kit workflows and offline-first app shell
@@ -69,11 +70,12 @@ That enables:
 
 ### Next slices
 
-1. more semantic retrieval coverage and pack discovery polish
-2. deepen compare/review workflows for iterative figure authorship
-3. expand desktop support beyond the current macOS packaging path
-4. more domain-specific figure recipes for additional biology problems
-5. publication-polish defaults for legends, annotations, and final export cleanup
+1. richer scientific text editing and label semantics
+2. more semantic retrieval coverage and pack discovery polish
+3. deepen compare/review workflows for iterative figure authorship
+4. expand desktop support beyond the current macOS packaging path
+5. more domain-specific figure recipes for additional biology problems
+6. publication-polish defaults for legends, annotations, and final export cleanup
 
 ## Design Rules
 

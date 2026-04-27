@@ -88,13 +88,18 @@ Publication-ready figures need hierarchy, restraint, clarity, and credibility. T
 - drag-and-drop canvas
 - text nodes
 - shape nodes
-- connectors
+- smart connectors with endpoint anchoring, activation/inhibition/link semantics, straight/elbow/curved routes, dashed/dotted styles, and on-canvas curve bending
 - marquee multi-select
 - grouping and ungrouping
 - align and distribute controls
+- tidy row, tidy column, tidy grid, and radial-ring arrangement tools
 - live alignment guides
-- layer order controls
+- transform handles for resizing, rotation, flipping, match-size, and fit-to-board workflows
+- top-first layer order panel with per-layer up/down controls, one-step ordering, and front/back jumps
 - lock and hide controls
+- editable fragment clipboard for copying/cutting/pasting graph-aware scene chunks
+- style clipboard for transferring layer and connector appearance
+- asset crop, mask, fit, zoom, opacity, flip, and visual effects
 - panel layout presets
 - reusable components
 - callout, legend, and scale-bar blocks
@@ -149,6 +154,7 @@ flowchart LR
 - React + Vite application
 - local canvas state stored in browser local storage
 - deterministic rendering and export behavior
+- graph-aware editor helpers for transform, layout, connector geometry, scene clipboard, and style clipboard workflows
 
 ### Server
 
@@ -223,6 +229,8 @@ HelixCanvas is already beyond the earliest proof-of-concept phase. The repo now 
 
 That means the current gap is no longer “can this make a figure?” The remaining work is about deeper text and connector controls, stronger retrieval, richer export presets, and smoother contributor ergonomics.
 
+The editor-depth gap has narrowed substantially. The current canvas now supports multi-object transform boxes, graph-aware fragment copy/paste, smart connector anchoring, connector curve editing, object arrangement tools, layer-order shortcuts, asset masks/effects, and export preservation for those visual states. The most visible remaining editor gaps are richer scientific text handling, connector labels/semantic annotations, more polished layer-panel ergonomics, and broader real-world template coverage.
+
 ## Risks and Open Questions
 
 ### Asset licensing complexity
@@ -247,8 +255,9 @@ See [OSS_ROADMAP.md](./OSS_ROADMAP.md) for the active milestone plan.
 
 Near-term priorities are:
 
-- editor polish and local project reliability
-- export and presentation presets
+- richer scientific text controls, including inline notation workflows
+- deeper connector labels and pathway semantics
+- export and presentation preset maturity
 - asset manifest and retrieval maturity
 - contributor experience and public documentation
 - optional AI provider boundaries

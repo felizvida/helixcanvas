@@ -2,7 +2,10 @@ import {
   buildConnectorArrowHead,
   buildConnectorGeometry,
   buildConnectorInhibitionBar,
+  getConnectorStrokeDasharray,
+  resolveConnectorAnchors,
 } from "./connectors.js";
+import { getNodeBounds } from "./editorSelection.js";
 import { getFontFamilyStack } from "./figureStyles.js";
 
 const XML_ESCAPES = {
@@ -21,6 +24,24 @@ const MIME_BY_EXTENSION = {
   webp: "image/webp",
 };
 
+const SVG_EFFECT_DEFS = `
+<defs>
+  <filter id="node-effect-soft-shadow" x="-30%" y="-30%" width="160%" height="160%">
+    <feDropShadow dx="0" dy="16" stdDeviation="10" flood-color="#151713" flood-opacity="0.18" />
+  </filter>
+  <filter id="node-effect-lifted" x="-35%" y="-35%" width="170%" height="170%">
+    <feDropShadow dx="0" dy="24" stdDeviation="14" flood-color="#151713" flood-opacity="0.2" />
+    <feDropShadow dx="0" dy="-1" stdDeviation="0.2" flood-color="#ffffff" flood-opacity="0.72" />
+  </filter>
+  <filter id="node-effect-glow" x="-45%" y="-45%" width="190%" height="190%">
+    <feDropShadow dx="0" dy="0" stdDeviation="8" flood-color="#008f86" flood-opacity="0.42" />
+  </filter>
+  <filter id="node-effect-halo" x="-45%" y="-45%" width="190%" height="190%">
+    <feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="#ffffff" flood-opacity="0.98" />
+    <feDropShadow dx="0" dy="0" stdDeviation="1" flood-color="#ffffff" flood-opacity="0.98" />
+  </filter>
+</defs>`;
+
 function escapeXml(value) {
   return String(value).replace(/[&<>"']/g, (char) => XML_ESCAPES[char]);
 }
@@ -31,6 +52,73 @@ function sanitizeFilenamePart(value) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "") || "helixcanvas-export";
+}
+
+function clampPercent(value) {
+  return Math.min(100, Math.max(0, Number(value) || 0));
+}
+
+function getSvgAlignment(value, low, middle, high) {
+  const percent = clampPercent(value);
+
+  if (percent <= 33) {
+    return low;
+  }
+
+  if (percent >= 67) {
+    return high;
+  }
+
+  return middle;
+}
+
+function getAssetPreserveAspectRatio(node) {
+  if (node.assetFit === "fill") {
+    return "none";
+  }
+
+  const xAlign = getSvgAlignment(node.cropX ?? 50, "xMin", "xMid", "xMax");
+  const yAlign = getSvgAlignment(node.cropY ?? 50, "YMin", "YMid", "YMax");
+  const fit = node.assetFit === "cover" || (Number(node.cropZoom) || 1) > 1 ? "slice" : "meet";
+  return `${xAlign}${yAlign} ${fit}`;
+}
+
+function getAssetImageFrame(node) {
+  const zoom = Math.max(1, Number(node.cropZoom) || 1);
+  const cropX = clampPercent(node.cropX ?? 50) / 100;
+  const cropY = clampPercent(node.cropY ?? 50) / 100;
+  const width = node.w * zoom;
+  const height = node.h * zoom;
+
+  return {
+    x: node.x - (width - node.w) * cropX,
+    y: node.y - (height - node.h) * cropY,
+    width,
+    height,
+  };
+}
+
+function getAssetClipPath(node, clipId) {
+  if (node.assetMask === "circle") {
+    return `<clipPath id="${clipId}"><ellipse cx="${node.x + node.w / 2}" cy="${node.y + node.h / 2}" rx="${node.w / 2}" ry="${node.h / 2}" /></clipPath>`;
+  }
+
+  if (node.assetMask === "hex") {
+    const points = [
+      [node.x + node.w * 0.25, node.y + node.h * 0.04],
+      [node.x + node.w * 0.75, node.y + node.h * 0.04],
+      [node.x + node.w, node.y + node.h * 0.5],
+      [node.x + node.w * 0.75, node.y + node.h * 0.96],
+      [node.x + node.w * 0.25, node.y + node.h * 0.96],
+      [node.x, node.y + node.h * 0.5],
+    ]
+      .map(([x, y]) => `${formatPdfNumber(x)},${formatPdfNumber(y)}`)
+      .join(" ");
+    return `<clipPath id="${clipId}"><polygon points="${points}" /></clipPath>`;
+  }
+
+  const radius = node.assetMask === "rounded" ? Math.min(24, node.w / 2, node.h / 2) : 0;
+  return `<clipPath id="${clipId}"><rect x="${node.x}" y="${node.y}" width="${node.w}" height="${node.h}" rx="${radius}" /></clipPath>`;
 }
 
 function renderShape(node) {
@@ -61,6 +149,45 @@ function renderShape(node) {
   ].join("");
 }
 
+function getNodeSvgTransform(node) {
+  const rotation = Number(node.rotation) || 0;
+  const scaleX = node.flipX ? -1 : 1;
+  const scaleY = node.flipY ? -1 : 1;
+
+  if (!rotation && scaleX === 1 && scaleY === 1) {
+    return "";
+  }
+
+  const bounds = getNodeBounds(node);
+  const centerX = bounds.left + bounds.width / 2;
+  const centerY = bounds.top + bounds.height / 2;
+  const transforms = [`translate(${centerX} ${centerY})`];
+
+  if (rotation) {
+    transforms.push(`rotate(${rotation})`);
+  }
+
+  if (scaleX !== 1 || scaleY !== 1) {
+    transforms.push(`scale(${scaleX} ${scaleY})`);
+  }
+
+  transforms.push(`translate(${-centerX} ${-centerY})`);
+  return transforms.join(" ");
+}
+
+function wrapNodeSvg(node, markup) {
+  const transform = getNodeSvgTransform(node);
+  const opacity = Number.isFinite(node.opacity) && node.opacity < 1 ? ` opacity="${node.opacity}"` : "";
+  const filter =
+    node.effect && node.effect !== "none" ? ` filter="url(#node-effect-${escapeXml(node.effect)})"` : "";
+
+  if (!transform && !opacity && !filter) {
+    return markup;
+  }
+
+  return `<g${transform ? ` transform="${transform}"` : ""}${opacity}${filter}>${markup}</g>`;
+}
+
 function renderTextNode(node) {
   const fontWeight = node.fontWeight ?? 600;
   const fontSize = node.fontSize ?? 18;
@@ -83,28 +210,56 @@ function renderTextNode(node) {
   ].join("");
 }
 
+function renderAssetNode(node) {
+  const fit = node.assetFit ?? "contain";
+  const mask = node.assetMask ?? "none";
+  const frame = getAssetImageFrame(node);
+  const preserveAspectRatio = getAssetPreserveAspectRatio(node);
+  const image = `<image x="${frame.x}" y="${frame.y}" width="${frame.width}" height="${frame.height}" href="${escapeXml(
+    node.assetUrl,
+  )}" preserveAspectRatio="${preserveAspectRatio}" />`;
+  const needsClip =
+    mask !== "none" ||
+    fit === "cover" ||
+    fit === "fill" ||
+    (Number(node.cropZoom) || 1) > 1;
+
+  if (!needsClip) {
+    return image;
+  }
+
+  const clipId = `asset-clip-${sanitizeFilenamePart(node.id ?? node.title)}`;
+  return `<defs>${getAssetClipPath(node, clipId)}</defs><g clip-path="url(#${clipId})">${image}</g>`;
+}
+
 function renderNode(node) {
+  let markup = "";
+
   if (node.type === "asset") {
-    return `<image x="${node.x}" y="${node.y}" width="${node.w}" height="${node.h}" href="${escapeXml(
-      node.assetUrl,
-    )}" preserveAspectRatio="xMidYMid meet" />`;
+    markup = renderAssetNode(node);
+    return wrapNodeSvg(node, markup);
   }
 
   if (node.type === "text") {
-    return renderTextNode(node);
+    markup = renderTextNode(node);
+    return wrapNodeSvg(node, markup);
   }
 
   if (node.type === "shape") {
-    return renderShape(node);
+    markup = renderShape(node);
+    return wrapNodeSvg(node, markup);
   }
 
   return "";
 }
 
-function renderConnector(connector) {
-  const geometry = buildConnectorGeometry(connector);
+function renderConnector(connector, nodes = []) {
+  const resolvedConnector = resolveConnectorAnchors(connector, nodes);
+  const geometry = buildConnectorGeometry(resolvedConnector);
   const stroke = connector.stroke ?? "#155e75";
   const strokeWidth = connector.strokeWidth ?? 4;
+  const strokeDasharray = getConnectorStrokeDasharray(connector);
+  const strokeDash = strokeDasharray ? ` stroke-dasharray="${strokeDasharray}"` : "";
   const label = connector.label
     ? `<text x="${geometry.label.x}" y="${geometry.label.y}" text-anchor="middle" font-size="13" font-weight="700" font-family="${escapeXml(
         getFontFamilyStack("grotesk"),
@@ -123,12 +278,12 @@ function renderConnector(connector) {
           return `<line x1="${bar.x1}" y1="${bar.y1}" x2="${bar.x2}" y2="${bar.y2}" stroke="${stroke}" stroke-width="${Math.max(
             3,
             strokeWidth - 0.5,
-          )}" stroke-linecap="round" />`;
+          )}" stroke-linecap="round"${strokeDash} />`;
         })()
       : "";
 
   return [
-    `<path d="${geometry.path}" fill="none" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round" />`,
+    `<path d="${geometry.path}" fill="none" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round"${strokeDash} />`,
     arrow,
     inhibition,
     label,
@@ -253,12 +408,16 @@ export function projectToSvg(project, options = {}) {
   const width = project.board.width;
   const height = project.board.height;
   const background = project.board.background ?? "#f7f2ea";
-  const nodes = project.nodes.filter((node) => !node.hidden).map(renderNode).join("");
-  const connectors = project.connectors.map(renderConnector).join("");
+  const visibleNodes = project.nodes.filter((node) => !node.hidden);
+  const nodes = visibleNodes.map(renderNode).join("");
+  const connectors = project.connectors
+    .map((connector) => renderConnector(connector, visibleNodes))
+    .join("");
 
   return [
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+    SVG_EFFECT_DEFS,
     includeBackground ? `<rect width="${width}" height="${height}" fill="${background}" />` : "",
     connectors,
     nodes,

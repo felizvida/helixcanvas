@@ -21,6 +21,9 @@ It is designed to answer four practical questions:
 The repo already covers part of this plan. These capabilities are now present in the codebase:
 
 - marquee multi-select, grouping, align/distribute, and live alignment guides
+- transform handles, graph-aware resize/rotate/flip, fit-to-board, match-size, and layout arrange tools
+- smart connector anchoring, route styling, curve bending, line styles, and smart connector creation from selected layers
+- fragment copy/cut/paste, style copy/paste, graph-safe deletion, and layer-order shortcuts
 - panel layouts, legends, scale bars, and reusable components
 - PNG and PDF export alongside SVG, JSON, and citation bundles
 - local project save/open flows, recovery drafts, and named snapshots
@@ -70,7 +73,7 @@ Exit criteria:
 Status:
 
 - the selection, grouping, layout, and review foundation is now meaningfully in place
-- the main remaining parity gaps here are richer text controls and connector semantics
+- the main remaining parity gaps here are richer text controls, connector labels/semantic annotations, and more polished layer-panel ergonomics
 
 Suggested issues:
 

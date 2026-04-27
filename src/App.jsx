@@ -49,20 +49,43 @@ import {
 } from "./lib/history.js";
 import {
   alignSelectedNodes,
+  arrangeSelectedNodes,
+  createConnectorTransformSnapshot,
+  createTransformOriginSnapshot,
   createNodeSelection,
   distributeSelectedNodes,
   findAlignmentGuides,
+  fitConnectorsToBounds,
+  fitSelectedNodesToBounds,
+  flipConnectors,
+  flipSelectedNodes,
   getNodeBounds,
+  getCombinedNodeBounds,
   getMarqueeRect,
   getMarqueeSelectionIds,
   getSelectedNodes,
   isNodeSelected,
   isNodeSelection,
+  matchSelectedNodeSize,
+  resizeConnectors,
+  resizeSelectedNodes,
+  reorderSelectedNodes,
+  rotateConnectors,
+  rotateConnectorsBy,
+  rotateSelectedNodes,
+  rotateSelectedNodesBy,
+  translateConnectorsBy,
 } from "./lib/editorSelection.js";
 import {
   buildConnectorArrowHead,
   buildConnectorGeometry,
   buildConnectorInhibitionBar,
+  createConnectorDraftBetweenNodes,
+  createConnectorDraftFromNode,
+  findNearestNodeAnchor,
+  getConnectorCurveBendFromPoint,
+  getConnectorStrokeDasharray,
+  resolveConnectorAnchors,
 } from "./lib/connectors.js";
 import { FONT_FAMILIES, getFontFamilyStack } from "./lib/figureStyles.js";
 import {
@@ -95,6 +118,17 @@ import {
   pushProjectSnapshot,
   removeProjectSnapshot,
 } from "./lib/projectSnapshots.js";
+import {
+  applyConnectorStyleSnapshot,
+  applyNodeStyleSnapshot,
+  createConnectorStyleSnapshot,
+  createNodeStyleSnapshot,
+} from "./lib/styleClipboard.js";
+import {
+  createSceneClipboard,
+  instantiateSceneClipboard,
+  removeSelectionFromProject,
+} from "./lib/sceneClipboard.js";
 import { compareProjects } from "./lib/projectCompare.js";
 import {
   buildPanelLayout,
@@ -182,6 +216,34 @@ const CONNECTOR_KIND_OPTIONS = [
 const CONNECTOR_ROUTE_OPTIONS = [
   { id: "straight", label: "Straight" },
   { id: "elbow", label: "Elbow" },
+  { id: "curve", label: "Curve" },
+];
+
+const CONNECTOR_LINE_STYLE_OPTIONS = [
+  { id: "solid", label: "Solid" },
+  { id: "dashed", label: "Dashed" },
+  { id: "dotted", label: "Dotted" },
+];
+
+const ASSET_FIT_OPTIONS = [
+  { id: "contain", label: "Fit inside" },
+  { id: "cover", label: "Crop to fill" },
+  { id: "fill", label: "Stretch" },
+];
+
+const ASSET_MASK_OPTIONS = [
+  { id: "none", label: "None" },
+  { id: "rounded", label: "Rounded card" },
+  { id: "circle", label: "Circle" },
+  { id: "hex", label: "Hexagon" },
+];
+
+const NODE_EFFECT_OPTIONS = [
+  { id: "none", label: "None" },
+  { id: "soft-shadow", label: "Soft shadow" },
+  { id: "lifted", label: "Lifted paper" },
+  { id: "glow", label: "Signal glow" },
+  { id: "halo", label: "White halo" },
 ];
 
 const HERO_KPIS = [
@@ -219,6 +281,20 @@ const IMAGE_GENERATION_FORMATS = [
   { id: "webp", label: "WebP" },
 ];
 
+const TRANSFORM_HANDLES = [
+  { id: "nw", label: "Resize top left" },
+  { id: "n", label: "Resize top" },
+  { id: "ne", label: "Resize top right" },
+  { id: "e", label: "Resize right" },
+  { id: "se", label: "Resize bottom right" },
+  { id: "s", label: "Resize bottom" },
+  { id: "sw", label: "Resize bottom left" },
+  { id: "w", label: "Resize left" },
+];
+
+const CORNER_TRANSFORM_HANDLES = new Set(["nw", "ne", "se", "sw"]);
+const CONNECTOR_TRANSFORM_PADDING = 32;
+
 function createId(prefix) {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -241,6 +317,25 @@ function withNodeState(node) {
     groupId: node.groupId ?? null,
     hidden: Boolean(node.hidden),
     locked: Boolean(node.locked),
+    flipX: Boolean(node.flipX),
+    flipY: Boolean(node.flipY),
+    assetFit: node.assetFit ?? "contain",
+    assetMask: node.assetMask ?? "none",
+    cropX: Number.isFinite(node.cropX) ? node.cropX : 50,
+    cropY: Number.isFinite(node.cropY) ? node.cropY : 50,
+    cropZoom: Number.isFinite(node.cropZoom) ? node.cropZoom : 1,
+    effect: node.effect ?? "none",
+  };
+}
+
+function normalizeConnectorAnchor(anchor) {
+  if (!anchor?.nodeId) {
+    return null;
+  }
+
+  return {
+    nodeId: anchor.nodeId,
+    side: anchor.side ?? "auto",
   };
 }
 
@@ -251,9 +346,13 @@ function withConnectorState(connector, strokeFallback = "#155e75") {
     strokeWidth: connector.strokeWidth ?? 4,
     kind: connector.kind ?? "activation",
     route: connector.route ?? "straight",
+    lineStyle: connector.lineStyle ?? "solid",
+    curveBend: Number.isFinite(connector.curveBend) ? connector.curveBend : 0,
     label: connector.label ?? "",
     from: { ...connector.from },
     to: { ...connector.to },
+    fromAnchor: normalizeConnectorAnchor(connector.fromAnchor),
+    toAnchor: normalizeConnectorAnchor(connector.toAnchor),
   };
 }
 
@@ -324,6 +423,79 @@ function prepareLoadedProject(project) {
 
 function describeSourcePolicy(sourceId) {
   return SOURCE_POLICIES.find((policy) => policy.id === sourceId);
+}
+
+function getNodeTransformStyle(node) {
+  const scaleX = node.flipX ? -1 : 1;
+  const scaleY = node.flipY ? -1 : 1;
+  return `rotate(${node.rotation ?? 0}deg) scale(${scaleX}, ${scaleY})`;
+}
+
+function getAssetMaskStyle(node) {
+  const mask = node.assetMask ?? "none";
+  const cropActive =
+    mask !== "none" ||
+    (node.assetFit ?? "contain") !== "contain" ||
+    (Number(node.cropZoom) || 1) > 1;
+  const baseStyle = {
+    overflow: cropActive ? "hidden" : "visible",
+  };
+
+  if (mask === "rounded") {
+    return {
+      ...baseStyle,
+      borderRadius: 24,
+    };
+  }
+
+  if (mask === "circle") {
+    return {
+      ...baseStyle,
+      borderRadius: "999px",
+    };
+  }
+
+  if (mask === "hex") {
+    return {
+      ...baseStyle,
+      clipPath: "polygon(25% 4%, 75% 4%, 100% 50%, 75% 96%, 25% 96%, 0 50%)",
+    };
+  }
+
+  return baseStyle;
+}
+
+function getAssetImageStyle(node) {
+  const cropX = Number.isFinite(node.cropX) ? node.cropX : 50;
+  const cropY = Number.isFinite(node.cropY) ? node.cropY : 50;
+  const cropZoom = Math.max(1, Number(node.cropZoom) || 1);
+
+  return {
+    objectFit: node.assetFit ?? "contain",
+    objectPosition: `${cropX}% ${cropY}%`,
+    transform: `scale(${cropZoom})`,
+    transformOrigin: `${cropX}% ${cropY}%`,
+  };
+}
+
+function getNodeEffectStyle(node) {
+  if (node.effect === "soft-shadow") {
+    return "drop-shadow(0 18px 24px rgba(21, 23, 19, 0.18))";
+  }
+
+  if (node.effect === "lifted") {
+    return "drop-shadow(0 26px 36px rgba(21, 23, 19, 0.2)) drop-shadow(0 2px 0 rgba(255, 255, 255, 0.72))";
+  }
+
+  if (node.effect === "glow") {
+    return "drop-shadow(0 0 18px rgba(0, 143, 134, 0.38))";
+  }
+
+  if (node.effect === "halo") {
+    return "drop-shadow(0 0 0.75rem rgba(255, 255, 255, 0.98)) drop-shadow(0 0 2px rgba(255, 255, 255, 0.98))";
+  }
+
+  return undefined;
 }
 
 function inferTemplateFromBrief(brief) {
@@ -1420,6 +1592,9 @@ function App() {
   const [notice, setNotice] = useState("");
   const [zoom, setZoom] = useState(0.78);
   const [snapToGrid, setSnapToGrid] = useState(true);
+  const [transformAspectLocked, setTransformAspectLocked] = useState(true);
+  const [styleClipboard, setStyleClipboard] = useState(null);
+  const [sceneClipboard, setSceneClipboard] = useState(null);
   const [dragState, setDragState] = useState(null);
   const [favoriteAssetIds, setFavoriteAssetIds] = useState(() =>
     typeof window === "undefined" ? [] : readStoredJson(window.localStorage, STORAGE_KEYS.favoriteAssets, []),
@@ -2030,8 +2205,16 @@ function App() {
               y: nextY,
             };
           });
+          const connectors = translateConnectorsBy(
+            current.connectors,
+            dragState.connectorIds,
+            dragState.originConnectors,
+            moveX,
+            moveY,
+          );
+          const connectorsChanged = connectors.some((connector, index) => connector !== current.connectors[index]);
 
-          if (!changed) {
+          if (!changed && !connectorsChanged) {
             return current;
           }
 
@@ -2044,6 +2227,81 @@ function App() {
           return {
             ...current,
             nodes,
+            connectors,
+            updatedAt: new Date().toISOString(),
+          };
+        });
+      }
+
+      if (dragState.kind === "transform") {
+        const point = { x, y };
+
+        setProject((current) => {
+          const transformOptions =
+            dragState.mode === "rotate"
+              ? { snapDegrees: event.shiftKey ? 15 : null }
+              : {
+                  preserveAspect: dragState.preserveAspect || event.shiftKey,
+                  snapToGrid,
+                  gridSize: GRID_SIZE,
+                };
+          const nodes =
+            dragState.mode === "rotate"
+              ? rotateSelectedNodes(
+                  current.nodes,
+                  dragState.ids,
+                  dragState.originNodes,
+                  dragState.originBounds,
+                  dragState.startPoint,
+                  point,
+                  transformOptions,
+                )
+              : resizeSelectedNodes(
+                  current.nodes,
+                  dragState.ids,
+                  dragState.originNodes,
+                  dragState.originBounds,
+                  dragState.handle,
+                  point,
+                  transformOptions,
+                );
+          const connectors =
+            dragState.mode === "rotate"
+              ? rotateConnectors(
+                  current.connectors,
+                  dragState.connectorIds,
+                  dragState.originConnectors,
+                  dragState.originBounds,
+                  dragState.startPoint,
+                  point,
+                  transformOptions,
+                )
+              : resizeConnectors(
+                  current.connectors,
+                  dragState.connectorIds,
+                  dragState.originConnectors,
+                  dragState.originBounds,
+                  dragState.handle,
+                  point,
+                  transformOptions,
+                );
+          const changed = nodes.some((node, index) => node !== current.nodes[index]);
+          const connectorsChanged = connectors.some((connector, index) => connector !== current.connectors[index]);
+
+          if (!changed && !connectorsChanged) {
+            return current;
+          }
+
+          if (!dragHistoryCapturedRef.current) {
+            historyRef.current = pushHistoryState(historyRef.current, current);
+            dragHistoryCapturedRef.current = true;
+            setHistoryVersion((value) => value + 1);
+          }
+
+          return {
+            ...current,
+            nodes,
+            connectors,
             updatedAt: new Date().toISOString(),
           };
         });
@@ -2080,9 +2338,22 @@ function App() {
             x: snapValue(x, snapToGrid),
             y: snapValue(y, snapToGrid),
           };
+          const anchorKey = `${dragState.handle}Anchor`;
+          const nextAnchor = event.altKey
+            ? null
+            : findNearestNodeAnchor(nextHandle, current.nodes, {
+                threshold: CONNECTOR_TRANSFORM_PADDING + 20,
+              });
+          const nextPoint = nextAnchor?.point ?? nextHandle;
           const currentHandle = connector[dragState.handle];
+          const currentAnchor = connector[anchorKey];
 
-          if (nextHandle.x === currentHandle.x && nextHandle.y === currentHandle.y) {
+          if (
+            nextPoint.x === currentHandle.x &&
+            nextPoint.y === currentHandle.y &&
+            (currentAnchor?.nodeId ?? null) === (nextAnchor?.nodeId ?? null) &&
+            (currentAnchor?.side ?? null) === (nextAnchor?.side ?? null)
+          ) {
             return current;
           }
 
@@ -2098,7 +2369,51 @@ function App() {
               item.id === dragState.id
                 ? {
                     ...item,
-                    [dragState.handle]: nextHandle,
+                    [dragState.handle]: nextPoint,
+                    [anchorKey]: nextAnchor
+                      ? {
+                          nodeId: nextAnchor.nodeId,
+                          side: nextAnchor.side,
+                        }
+                      : null,
+                  }
+                : item,
+            ),
+            updatedAt: new Date().toISOString(),
+          };
+        });
+      }
+
+      if (dragState.kind === "connector-curve") {
+        setProject((current) => {
+          const connector = current.connectors.find((item) => item.id === dragState.id);
+
+          if (!connector) {
+            return current;
+          }
+
+          const resolvedConnector = resolveConnectorAnchors(connector, current.nodes);
+          const rawBend = getConnectorCurveBendFromPoint(resolvedConnector, { x, y });
+          const nextBend = event.shiftKey ? Math.round(rawBend / 10) * 10 : rawBend;
+
+          if ((connector.route ?? "straight") === "curve" && connector.curveBend === nextBend) {
+            return current;
+          }
+
+          if (!dragHistoryCapturedRef.current) {
+            historyRef.current = pushHistoryState(historyRef.current, current);
+            dragHistoryCapturedRef.current = true;
+            setHistoryVersion((value) => value + 1);
+          }
+
+          return {
+            ...current,
+            connectors: current.connectors.map((item) =>
+              item.id === dragState.id
+                ? {
+                    ...item,
+                    route: "curve",
+                    curveBend: nextBend,
                   }
                 : item,
             ),
@@ -2190,6 +2505,9 @@ function App() {
     selection?.kind === "connector"
       ? project.connectors.find((connector) => connector.id === selection.id) ?? null
       : null;
+  const selectedResolvedConnector = selectedConnector
+    ? resolveConnectorAnchors(selectedConnector, project.nodes)
+    : null;
   const selectedComment =
     selection?.kind === "comment"
       ? project.comments.find((comment) => comment.id === selection.id) ?? null
@@ -2225,6 +2543,7 @@ function App() {
     ? getMarqueeRect(dragState.startPoint, dragState.currentPoint)
     : null;
   const dragGuides = dragState?.kind === "nodes" ? dragState.guides ?? [] : [];
+  const selectionTransformBox = hasNodeSelection ? getCombinedNodeBounds(selectedNodes) : null;
   const canUndo = historyRef.current.past.length > 0;
   const canRedo = historyRef.current.future.length > 0;
   const openCommentCount = countOpenReviewComments(project.comments ?? []);
@@ -3129,6 +3448,212 @@ function App() {
     setNotice("Selected the full group");
   }
 
+  function getBoardPointFromPointer(event) {
+    const rect = boardRef.current?.getBoundingClientRect();
+
+    if (!rect) {
+      return null;
+    }
+
+    return {
+      x: (event.clientX - rect.left) / zoom,
+      y: (event.clientY - rect.top) / zoom,
+    };
+  }
+
+  function startSelectionTransform(handle, event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!hasNodeSelection || hasLockedSelectedNodes) {
+      setNotice("Unlock selected layers before transforming them");
+      return;
+    }
+
+    const point = getBoardPointFromPointer(event);
+    const snapshot = createTransformOriginSnapshot(project.nodes, selectedNodeIds);
+
+    if (!point || !snapshot.bounds) {
+      return;
+    }
+
+    const connectorSnapshot = createConnectorTransformSnapshot(project.connectors, snapshot.bounds, {
+      padding: CONNECTOR_TRANSFORM_PADDING,
+    });
+
+    setDragState({
+      kind: "transform",
+      mode: handle === "rotate" ? "rotate" : "resize",
+      handle,
+      ids: selectedNodeIds,
+      connectorIds: connectorSnapshot.ids,
+      originConnectors: connectorSnapshot.connectors,
+      startPoint: point,
+      originBounds: snapshot.bounds,
+      originNodes: snapshot.nodes,
+      preserveAspect:
+        handle !== "rotate" &&
+        transformAspectLocked &&
+        CORNER_TRANSFORM_HANDLES.has(handle),
+    });
+  }
+
+  function getSelectionGraphSnapshot() {
+    const nodeSnapshot = createTransformOriginSnapshot(project.nodes, selectedNodeIds);
+    const connectorSnapshot = createConnectorTransformSnapshot(project.connectors, nodeSnapshot.bounds, {
+      padding: CONNECTOR_TRANSFORM_PADDING,
+    });
+
+    return {
+      nodes: nodeSnapshot,
+      connectors: connectorSnapshot,
+    };
+  }
+
+  function applyGraphTransform(nodes, connectors, nextNotice) {
+    const changed = nodes.some((node, index) => node !== project.nodes[index]);
+    const nextConnectors = connectors ?? project.connectors;
+    const connectorsChanged = nextConnectors.some((connector, index) => connector !== project.connectors[index]);
+
+    if (!changed && !connectorsChanged) {
+      return;
+    }
+
+    applyProjectChange(
+      (current) => ({
+        ...current,
+        nodes,
+        connectors: nextConnectors,
+      }),
+      {
+        selection: createNodeSelection(selectedNodeIds),
+        notice: nextNotice,
+      },
+    );
+  }
+
+  function rotateSelectionBy(degrees) {
+    if (!hasNodeSelection) {
+      return;
+    }
+
+    if (hasLockedSelectedNodes) {
+      setNotice("Unlock selected layers before rotating them");
+      return;
+    }
+
+    const snapshot = getSelectionGraphSnapshot();
+
+    if (!snapshot.nodes.bounds) {
+      return;
+    }
+
+    applyGraphTransform(
+      rotateSelectedNodesBy(project.nodes, selectedNodeIds, degrees),
+      rotateConnectorsBy(
+        project.connectors,
+        snapshot.connectors.ids,
+        snapshot.connectors.connectors,
+        snapshot.nodes.bounds,
+        degrees,
+      ),
+      `Rotated selection ${degrees > 0 ? "+" : ""}${degrees}°`,
+    );
+  }
+
+  function flipSelection(axis) {
+    if (!hasNodeSelection) {
+      return;
+    }
+
+    if (hasLockedSelectedNodes) {
+      setNotice("Unlock selected layers before flipping them");
+      return;
+    }
+
+    const snapshot = getSelectionGraphSnapshot();
+
+    if (!snapshot.nodes.bounds) {
+      return;
+    }
+
+    applyGraphTransform(
+      flipSelectedNodes(project.nodes, selectedNodeIds, axis),
+      flipConnectors(
+        project.connectors,
+        snapshot.connectors.ids,
+        snapshot.connectors.connectors,
+        snapshot.nodes.bounds,
+        axis,
+      ),
+      axis === "horizontal" ? "Flipped selection horizontally" : "Flipped selection vertically",
+    );
+  }
+
+  function matchSelectionSize(dimension) {
+    if (selectedNodes.length < 2) {
+      setNotice("Select at least two layers to match size");
+      return;
+    }
+
+    if (hasLockedSelectedNodes) {
+      setNotice("Unlock selected layers before matching size");
+      return;
+    }
+
+    applyGraphTransform(
+      matchSelectedNodeSize(project.nodes, selectedNodeIds, dimension),
+      null,
+      dimension === "width"
+        ? "Matched selection width"
+        : dimension === "height"
+          ? "Matched selection height"
+          : "Matched selection size",
+    );
+  }
+
+  function fitSelectionToBoard() {
+    if (!hasNodeSelection) {
+      return;
+    }
+
+    if (hasLockedSelectedNodes) {
+      setNotice("Unlock selected layers before fitting them");
+      return;
+    }
+
+    const snapshot = getSelectionGraphSnapshot();
+    const targetBounds = {
+      left: 0,
+      top: 0,
+      width: project.board.width,
+      height: project.board.height,
+    };
+    const fitOptions = { padding: 72, preserveAspect: transformAspectLocked };
+
+    if (!snapshot.nodes.bounds) {
+      return;
+    }
+
+    applyGraphTransform(
+      fitSelectedNodesToBounds(
+        project.nodes,
+        selectedNodeIds,
+        targetBounds,
+        fitOptions,
+      ),
+      fitConnectorsToBounds(
+        project.connectors,
+        snapshot.connectors.ids,
+        snapshot.connectors.connectors,
+        snapshot.nodes.bounds,
+        targetBounds,
+        fitOptions,
+      ),
+      "Fit selection to board",
+    );
+  }
+
   function setNodesHidden(nodeIds, hidden) {
     if (!nodeIds.length) {
       return;
@@ -3260,10 +3785,17 @@ function App() {
     }
 
     const rect = boardRef.current?.getBoundingClientRect() ?? event.currentTarget.getBoundingClientRect();
+    const dragBounds = getCombinedNodeBounds(dragNodes);
+    const connectorSnapshot = createConnectorTransformSnapshot(project.connectors, dragBounds, {
+      padding: CONNECTOR_TRANSFORM_PADDING,
+    });
+
     setDragState({
       kind: "nodes",
       ids: currentIds,
       guides: [],
+      connectorIds: connectorSnapshot.ids,
+      originConnectors: connectorSnapshot.connectors,
       startPoint: {
         x: (event.clientX - rect.left) / zoom,
         y: (event.clientY - rect.top) / zoom,
@@ -3385,10 +3917,78 @@ function App() {
         return;
       }
 
-      if (metaKey && event.key.toLowerCase() === "d" && hasNodeSelection) {
+      if (metaKey && event.shiftKey && event.key.toLowerCase() === "c") {
+        event.preventDefault();
+        copySelectedStyle();
+        return;
+      }
+
+      if (metaKey && event.shiftKey && event.key.toLowerCase() === "v") {
+        event.preventDefault();
+        pasteStyleToSelection();
+        return;
+      }
+
+      if (metaKey && !event.shiftKey && event.key.toLowerCase() === "c") {
+        event.preventDefault();
+        copySceneSelection();
+        return;
+      }
+
+      if (metaKey && !event.shiftKey && event.key.toLowerCase() === "x") {
+        event.preventDefault();
+        cutSceneSelection();
+        return;
+      }
+
+      if (metaKey && !event.shiftKey && event.key.toLowerCase() === "v") {
+        event.preventDefault();
+        pasteSceneClipboard();
+        return;
+      }
+
+      if (hasNodeSelection && metaKey && event.key === "]") {
+        event.preventDefault();
+        if (event.shiftKey) {
+          bringToFront();
+        } else {
+          bringForward();
+        }
+        return;
+      }
+
+      if (hasNodeSelection && metaKey && event.key === "[") {
+        event.preventDefault();
+        if (event.shiftKey) {
+          sendToBack();
+        } else {
+          sendBackward();
+        }
+        return;
+      }
+
+      if (hasNodeSelection && !metaKey && (event.key === "[" || event.key === "]")) {
+        event.preventDefault();
+        rotateSelectionBy((event.key === "[" ? -1 : 1) * (event.shiftKey ? 90 : 15));
+        return;
+      }
+
+      if (hasNodeSelection && event.altKey && event.code === "KeyH") {
+        event.preventDefault();
+        flipSelection("horizontal");
+        return;
+      }
+
+      if (hasNodeSelection && event.altKey && event.code === "KeyV") {
+        event.preventDefault();
+        flipSelection("vertical");
+        return;
+      }
+
+      if (metaKey && event.key.toLowerCase() === "d" && selection) {
         event.preventDefault();
 
-        if (hasLockedSelectedNodes) {
+        if (isNodeSelection(selection) && hasLockedSelectedNodes) {
           setNotice("Unlock selected layers before duplicating them");
           return;
         }
@@ -3403,30 +4003,7 @@ function App() {
 
       if (event.key === "Backspace" || event.key === "Delete") {
         event.preventDefault();
-
-        if (isNodeSelection(selection) && hasLockedSelectedNodes) {
-          setNotice("Unlock selected layers before deleting them");
-          return;
-        }
-
-        applyProjectChange(
-          (current) =>
-            isNodeSelection(selection)
-              ? {
-                  ...current,
-                  nodes: current.nodes.filter((node) => !selection.ids.includes(node.id)),
-                }
-              : selection.kind === "comment"
-                ? {
-                    ...current,
-                    comments: (current.comments ?? []).filter((comment) => comment.id !== selection.id),
-                  }
-              : {
-                  ...current,
-                  connectors: current.connectors.filter((connector) => connector.id !== selection.id),
-                },
-          { selection: null },
-        );
+        deleteSelection();
         return;
       }
 
@@ -3442,6 +4019,10 @@ function App() {
         const deltaX = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
         const deltaY = event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
         const selectedIdSet = new Set(selectedNodeIds);
+        const snapshot = createTransformOriginSnapshot(project.nodes, selectedNodeIds);
+        const connectorSnapshot = createConnectorTransformSnapshot(project.connectors, snapshot.bounds, {
+          padding: CONNECTOR_TRANSFORM_PADDING,
+        });
 
         applyProjectChange((current) => ({
           ...current,
@@ -3453,6 +4034,13 @@ function App() {
                   y: Math.max(0, snapValue(node.y + deltaY, snapToGrid && event.shiftKey)),
                 }
               : node,
+          ),
+          connectors: translateConnectorsBy(
+            current.connectors,
+            connectorSnapshot.ids,
+            connectorSnapshot.connectors,
+            deltaX,
+            deltaY,
           ),
         }));
       }
@@ -3469,10 +4057,12 @@ function App() {
     hasNodeSelection,
     historyVersion,
     openCommandPalette,
+    project.connectors,
     project.nodes,
     selectedNodeIds,
     selection,
     snapToGrid,
+    styleClipboard,
     ungroupSelection,
   ]);
 
@@ -3521,23 +4111,52 @@ function App() {
   }
 
   function addConnector() {
-    const connector = {
-      id: createId("connector"),
-      from: { x: 340, y: 320 },
-      to: { x: 520, y: 320 },
+    const orderedSelectedNodes = selectedNodeIds
+      .map((id) => project.nodes.find((node) => node.id === id))
+      .filter(Boolean);
+    const connector =
+      orderedSelectedNodes.length >= 2
+        ? createConnectorDraftBetweenNodes(orderedSelectedNodes[0], orderedSelectedNodes[1], {
+            id: createId("connector"),
+            stroke: project.palette?.accent ?? "#155e75",
+          })
+        : orderedSelectedNodes.length === 1
+          ? createConnectorDraftFromNode(orderedSelectedNodes[0], {
+              id: createId("connector"),
+              stroke: project.palette?.accent ?? "#155e75",
+            })
+          : {
+              id: createId("connector"),
+              from: { x: 340, y: 320 },
+              to: { x: 520, y: 320 },
+              stroke: project.palette?.accent ?? "#155e75",
+              strokeWidth: 4,
+              kind: "activation",
+              route: "straight",
+              lineStyle: "solid",
+              curveBend: 0,
+              label: "",
+            };
+
+    const normalizedConnector = {
+      ...connector,
       stroke: project.palette?.accent ?? "#155e75",
-      strokeWidth: 4,
-      kind: "activation",
-      route: "straight",
-      label: "",
     };
 
     applyProjectChange(
       (current) => ({
         ...current,
-        connectors: [...current.connectors, connector],
+        connectors: [...current.connectors, normalizedConnector],
       }),
-      { selection: { kind: "connector", id: connector.id } },
+      {
+        selection: { kind: "connector", id: normalizedConnector.id },
+        notice:
+          orderedSelectedNodes.length >= 2
+            ? "Linked selected layers"
+            : orderedSelectedNodes.length === 1
+              ? "Started connector from selected layer"
+              : "Added connector",
+      },
     );
   }
 
@@ -4151,6 +4770,75 @@ function App() {
     }));
   }
 
+  function resetSelectedAssetCrop() {
+    updateSelectedNode({
+      assetFit: "contain",
+      assetMask: "none",
+      cropX: 50,
+      cropY: 50,
+      cropZoom: 1,
+    });
+  }
+
+  function copySelectedStyle() {
+    const nodeStyleSource = selectedNode ?? (hasNodeSelection ? selectedNodes[0] : null);
+    const snapshot = nodeStyleSource
+      ? createNodeStyleSnapshot(nodeStyleSource)
+      : selectedConnector
+        ? createConnectorStyleSnapshot(selectedConnector)
+        : null;
+
+    if (!snapshot) {
+      setNotice("Select a layer or connector before copying style");
+      return;
+    }
+
+    setStyleClipboard(snapshot);
+    setNotice(`Copied ${snapshot.kind === "node-style" ? "layer" : "connector"} style`);
+  }
+
+  function pasteStyleToSelection() {
+    if (!styleClipboard) {
+      setNotice("Copy a style first");
+      return;
+    }
+
+    if (styleClipboard.kind === "node-style" && hasNodeSelection) {
+      if (hasLockedSelectedNodes) {
+        setNotice("Unlock selected layers before pasting style");
+        return;
+      }
+
+      applyProjectChange(
+        (current) => ({
+          ...current,
+          nodes: applyNodeStyleSnapshot(current.nodes, selectedNodeIds, styleClipboard),
+        }),
+        {
+          selection: createNodeSelection(selectedNodeIds),
+          notice: "Pasted layer style",
+        },
+      );
+      return;
+    }
+
+    if (styleClipboard.kind === "connector-style" && selectedConnector) {
+      applyProjectChange(
+        (current) => ({
+          ...current,
+          connectors: applyConnectorStyleSnapshot(current.connectors, selectedConnector.id, styleClipboard),
+        }),
+        {
+          selection,
+          notice: "Pasted connector style",
+        },
+      );
+      return;
+    }
+
+    setNotice("Copied style does not match the current selection type");
+  }
+
   function updateSelectedConnector(patch) {
     if (!selectedConnector) {
       return;
@@ -4162,6 +4850,174 @@ function App() {
         connector.id === selectedConnector.id ? { ...connector, ...patch } : connector,
       ),
     }));
+  }
+
+  function describeConnectorAnchor(anchor) {
+    if (!anchor?.nodeId) {
+      return "Free point";
+    }
+
+    const node = project.nodes.find((item) => item.id === anchor.nodeId);
+    const label = node?.title ?? node?.text ?? "Layer";
+    const side = anchor.side && anchor.side !== "auto" ? ` · ${anchor.side}` : "";
+    return `${label}${side}`;
+  }
+
+  function autoAnchorSelectedConnector() {
+    if (!selectedConnector || !selectedResolvedConnector) {
+      return;
+    }
+
+    const fromAnchor = findNearestNodeAnchor(selectedResolvedConnector.from, project.nodes, {
+      threshold: 140,
+    });
+    const toAnchor = findNearestNodeAnchor(selectedResolvedConnector.to, project.nodes, {
+      threshold: 140,
+    });
+
+    if (!fromAnchor && !toAnchor) {
+      setNotice("No nearby layers found for connector anchors");
+      return;
+    }
+
+    updateSelectedConnector({
+      from: fromAnchor?.point ?? selectedConnector.from,
+      to: toAnchor?.point ?? selectedConnector.to,
+      fromAnchor: fromAnchor
+        ? {
+            nodeId: fromAnchor.nodeId,
+            side: fromAnchor.side,
+          }
+        : selectedConnector.fromAnchor ?? null,
+      toAnchor: toAnchor
+        ? {
+            nodeId: toAnchor.nodeId,
+            side: toAnchor.side,
+          }
+        : selectedConnector.toAnchor ?? null,
+    });
+    setNotice("Anchored connector to nearby layers");
+  }
+
+  function detachSelectedConnectorAnchors() {
+    if (!selectedConnector || !selectedResolvedConnector) {
+      return;
+    }
+
+    updateSelectedConnector({
+      from: selectedResolvedConnector.from,
+      to: selectedResolvedConnector.to,
+      fromAnchor: null,
+      toAnchor: null,
+    });
+    setNotice("Detached connector anchors");
+  }
+
+  function getSceneFragmentSelection(fragment) {
+    if (!fragment) {
+      return null;
+    }
+
+    if (fragment.nodeIds?.length) {
+      return createNodeSelection(fragment.nodeIds);
+    }
+
+    if (fragment.connectorIds?.length) {
+      return { kind: "connector", id: fragment.connectorIds[0] };
+    }
+
+    if (fragment.commentIds?.length) {
+      return { kind: "comment", id: fragment.commentIds[0] };
+    }
+
+    return null;
+  }
+
+  function copySceneSelection() {
+    const fragment = createSceneClipboard(project, selection);
+
+    if (!fragment) {
+      setNotice("Select a layer, connector, or comment before copying");
+      return null;
+    }
+
+    setSceneClipboard(fragment);
+    setNotice(`Copied ${fragment.sourceLabel} fragment`);
+    return fragment;
+  }
+
+  function pasteSceneClipboard() {
+    if (!sceneClipboard) {
+      setNotice("Copy a figure fragment first");
+      return;
+    }
+
+    const fragment = instantiateSceneClipboard(sceneClipboard, { createId });
+
+    if (!fragment) {
+      setNotice("Could not paste that fragment");
+      return;
+    }
+
+    applyProjectChange(
+      (current) => ({
+        ...current,
+        nodes: [...current.nodes, ...fragment.nodes],
+        connectors: [...current.connectors, ...fragment.connectors],
+        comments: [...(current.comments ?? []), ...fragment.comments],
+      }),
+      {
+        selection: getSceneFragmentSelection(fragment),
+        notice: "Pasted figure fragment",
+      },
+    );
+  }
+
+  function deleteSelection() {
+    if (!selection) {
+      return;
+    }
+
+    if (isNodeSelection(selection) && hasLockedSelectedNodes) {
+      setNotice("Unlock selected layers before deleting them");
+      return;
+    }
+
+    applyProjectChange(
+      (current) => removeSelectionFromProject(current, selection),
+      {
+        selection: null,
+        notice: "Deleted selection",
+      },
+    );
+  }
+
+  function cutSceneSelection() {
+    if (!selection) {
+      setNotice("Select something before cutting");
+      return;
+    }
+
+    if (isNodeSelection(selection) && hasLockedSelectedNodes) {
+      setNotice("Unlock selected layers before cutting them");
+      return;
+    }
+
+    const fragment = createSceneClipboard(project, selection);
+
+    if (!fragment) {
+      setNotice("Could not cut that selection");
+      return;
+    }
+
+    setSceneClipboard(fragment);
+    applyProjectChange(
+      (current) => removeSelectionFromProject(current, selection),
+      {
+        selection: null,
+        notice: `Cut ${fragment.sourceLabel} fragment`,
+      },
+    );
   }
 
   function alignSelection(mode) {
@@ -4214,41 +5070,78 @@ function App() {
     );
   }
 
-  function duplicateSelection() {
-    if (!hasNodeSelection) {
+  function arrangeSelection(mode) {
+    if (selectedNodes.length < 2) {
+      setNotice("Select at least two layers to arrange them");
       return;
     }
 
     if (hasLockedSelectedNodes) {
+      setNotice("Unlock selected layers before arranging them");
+      return;
+    }
+
+    applyProjectChange(
+      (current) => {
+        const nodes = arrangeSelectedNodes(current.nodes, selectedNodeIds, mode);
+
+        if (nodes === current.nodes) {
+          return current;
+        }
+
+        return {
+          ...current,
+          nodes,
+        };
+      },
+      {
+        selection: createNodeSelection(selectedNodeIds),
+        notice:
+          mode === "row"
+            ? "Arranged selection as a row"
+            : mode === "column"
+              ? "Arranged selection as a column"
+              : mode === "grid"
+                ? "Arranged selection as a grid"
+              : "Arranged selection radially",
+      },
+    );
+  }
+
+  function duplicateSelection() {
+    if (!selection) {
+      setNotice("Select something before duplicating");
+      return;
+    }
+
+    if (isNodeSelection(selection) && hasLockedSelectedNodes) {
       setNotice("Unlock selected layers before duplicating them");
       return;
     }
 
-    const duplicateGroupIds = new Map();
-    const duplicates = selectedNodes.map((node) => ({
-      ...node,
-      id: createId("node"),
-      groupId: node.groupId
-        ? (duplicateGroupIds.has(node.groupId)
-            ? duplicateGroupIds.get(node.groupId)
-            : duplicateGroupIds.set(node.groupId, createId("group")).get(node.groupId))
-        : null,
-      x: node.x + 32,
-      y: node.y + 32,
-      locked: false,
-      hidden: false,
-    }));
+    const snapshot = createSceneClipboard(project, selection);
+    const fragment = instantiateSceneClipboard(snapshot, { createId });
+
+    if (!fragment) {
+      setNotice("Could not duplicate that selection");
+      return;
+    }
 
     applyProjectChange(
       (current) => ({
         ...current,
-        nodes: [...current.nodes, ...duplicates],
+        nodes: [...current.nodes, ...fragment.nodes],
+        connectors: [...current.connectors, ...fragment.connectors],
+        comments: [...(current.comments ?? []), ...fragment.comments],
       }),
-      { selection: createNodeSelection(duplicates.map((node) => node.id)) },
+      {
+        selection: getSceneFragmentSelection(fragment),
+        notice: "Duplicated selection",
+      },
     );
   }
 
-  function bringForward() {
+  function reorderSelection(mode) {
     if (!hasNodeSelection) {
       return;
     }
@@ -4259,32 +5152,12 @@ function App() {
     }
 
     applyProjectChange((current) => {
-      const selectedIdSet = new Set(selectedNodeIds);
-      const nodes = [...current.nodes];
-      let changed = false;
+      const nodes = reorderSelectedNodes(current.nodes, selectedNodeIds, mode);
 
-      for (let index = nodes.length - 2; index >= 0; index -= 1) {
-        if (!selectedIdSet.has(nodes[index].id)) {
-          continue;
-        }
-
-        let nextIndex = index + 1;
-
-        while (nextIndex < nodes.length && selectedIdSet.has(nodes[nextIndex].id)) {
-          nextIndex += 1;
-        }
-
-        if (nextIndex >= nodes.length) {
-          continue;
-        }
-
-        [nodes[index], nodes[nextIndex]] = [nodes[nextIndex], nodes[index]];
-        changed = true;
-      }
-
-      if (!changed) {
+      if (nodes === current.nodes) {
         return current;
       }
+
       return {
         ...current,
         nodes,
@@ -4292,48 +5165,52 @@ function App() {
     });
   }
 
+  function bringForward() {
+    reorderSelection("forward");
+  }
+
+  function bringToFront() {
+    reorderSelection("front");
+  }
+
   function sendBackward() {
-    if (!hasNodeSelection) {
+    reorderSelection("backward");
+  }
+
+  function sendToBack() {
+    reorderSelection("back");
+  }
+
+  function reorderSingleLayer(nodeId, mode) {
+    const node = project.nodes.find((item) => item.id === nodeId);
+
+    if (!node) {
       return;
     }
 
-    if (hasLockedSelectedNodes) {
-      setNotice("Unlock selected layers before reordering them");
+    if (node.locked) {
+      setNotice("Unlock that layer before reordering it");
       return;
     }
 
-    applyProjectChange((current) => {
-      const selectedIdSet = new Set(selectedNodeIds);
-      const nodes = [...current.nodes];
-      let changed = false;
+    applyProjectChange(
+      (current) => {
+        const nodes = reorderSelectedNodes(current.nodes, [nodeId], mode);
 
-      for (let index = 1; index < nodes.length; index += 1) {
-        if (!selectedIdSet.has(nodes[index].id)) {
-          continue;
+        if (nodes === current.nodes) {
+          return current;
         }
 
-        let previousIndex = index - 1;
-
-        while (previousIndex >= 0 && selectedIdSet.has(nodes[previousIndex].id)) {
-          previousIndex -= 1;
-        }
-
-        if (previousIndex < 0) {
-          continue;
-        }
-
-        [nodes[index], nodes[previousIndex]] = [nodes[previousIndex], nodes[index]];
-        changed = true;
-      }
-
-      if (!changed) {
-        return current;
-      }
-      return {
-        ...current,
-        nodes,
-      };
-    });
+        return {
+          ...current,
+          nodes,
+        };
+      },
+      {
+        selection: createNodeSelection([nodeId]),
+        notice: mode === "forward" ? "Moved layer up" : "Moved layer down",
+      },
+    );
   }
 
   function exportProjectSvg() {
@@ -4828,27 +5705,11 @@ function App() {
           <button type="button" className="ghost-button" onClick={() => openCommandPalette(aiEditPrompt)}>
             Command palette
           </button>
-          {installPromptEvent ? (
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={promptInstallApp}
-              disabled={installBusy}
-            >
-              {installBusy ? "Opening install..." : "Install app"}
-            </button>
-          ) : null}
           <button type="button" className="ghost-button" onClick={requestProjectOpen}>
-            Open project
+            Open
           </button>
           <button type="button" className="secondary-button" onClick={() => saveProjectFile()}>
-            Save project
-          </button>
-          <button type="button" className="ghost-button" onClick={copyCitationBundle}>
-            Copy attributions
-          </button>
-          <button type="button" className="ghost-button" onClick={exportProjectSvg}>
-            Export SVG
+            Save
           </button>
           <button type="button" className="primary-button" onClick={exportProjectPng} disabled={exportBusy.png}>
             {exportBusy.png ? "Exporting PNG..." : "Export PNG"}
@@ -4859,12 +5720,11 @@ function App() {
       <section className="hero">
         <div className="hero__copy">
           <span className="eyebrow">Open biomedical illustration platform</span>
-          <h2>Create publication-ready figures with open libraries and a source-aware AI copilot.</h2>
+          <h2>A quieter canvas-first studio for biomedical figures.</h2>
           <p>
-            HelixCanvas combines Bioicons, the Servier vector subset, official Servier Medical
-            Art downloads, and a safe import lane for your own FigureLabs exports into one
-            publication-focused editor. The AI layer drafts structured figure plans on the server,
-            suggests local assets, and critiques layout clarity without exposing your API key in the browser.
+            HelixCanvas keeps open biomedical assets, local project files, provenance, exports,
+            and optional AI generation in one composed workspace without making every system shout
+            at the same time.
           </p>
           <div className="hero__actions">
             <button
@@ -4881,9 +5741,16 @@ function App() {
             >
               Open real example
             </button>
-            <button type="button" className="ghost-button" onClick={() => openExternalLink("https://bioicons.com/")}>
-              Browse Bioicons
-            </button>
+            {installPromptEvent ? (
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={promptInstallApp}
+                disabled={installBusy}
+              >
+                {installBusy ? "Opening install..." : "Install app"}
+              </button>
+            ) : null}
           </div>
         </div>
         <div className="hero__stats">
@@ -5267,6 +6134,9 @@ function App() {
               </button>
               <button type="button" className="ghost-button" onClick={exportProjectSvg}>
                 Download SVG
+              </button>
+              <button type="button" className="ghost-button" onClick={copyCitationBundle}>
+                Copy attributions
               </button>
               <button type="button" className="ghost-button" onClick={exportReviewBundle}>
                 Review bundle
@@ -5867,7 +6737,7 @@ function App() {
             </div>
           ) : null}
 
-          <div className="panel">
+          <div className="panel library-panel">
             <div className="panel__head">
               <h3>Source-aware library</h3>
               <span>
@@ -6106,15 +6976,11 @@ function App() {
               </div>
               <div className="toolbar-hints">
                 <span>Cmd/Ctrl+Z undo</span>
-                <span>Cmd/Ctrl+D duplicate</span>
-                <span>Cmd/Ctrl+G group</span>
-                <span>Shift+click multi-select</span>
-                <span>Comments stay out of exports</span>
-                <span>Text and connectors have richer controls</span>
-                <span>Save selections as components</span>
-                <span>Grouped layers move together</span>
-                <span>Shift+arrows coarse nudge</span>
-                <span>Scientific builders seed membrane and assay scaffolds</span>
+                <span>Cmd/Ctrl+K commands</span>
+                <span>Shift-click multi-select</span>
+                <span>Cmd/Ctrl+C/V fragments</span>
+                <span>Cmd/Ctrl+Shift+C/V style</span>
+                <span>[ ] rotate · Cmd/Ctrl+[ ] order</span>
               </div>
               <div className="template-row">
                 {TEMPLATES.map((template) => (
@@ -6151,13 +7017,15 @@ function App() {
                 >
                   {project.connectors.map((connector) => {
                     const isSelected = selection?.kind === "connector" && selection.id === connector.id;
-                    const geometry = buildConnectorGeometry(connector);
+                    const resolvedConnector = resolveConnectorAnchors(connector, project.nodes);
+                    const geometry = buildConnectorGeometry(resolvedConnector);
+                    const strokeDasharray = getConnectorStrokeDasharray(connector);
                     const arrowHead =
-                      connector.kind === "activation"
+                      resolvedConnector.kind === "activation"
                         ? buildConnectorArrowHead(geometry.endSegment)
                         : null;
                     const inhibitionBar =
-                      connector.kind === "inhibition"
+                      resolvedConnector.kind === "inhibition"
                         ? buildConnectorInhibitionBar(geometry.endSegment)
                         : null;
                     return (
@@ -6179,6 +7047,7 @@ function App() {
                           fill="none"
                           stroke={connector.stroke}
                           strokeWidth={connector.strokeWidth}
+                          strokeDasharray={strokeDasharray || undefined}
                           strokeLinecap="round"
                           strokeLinejoin="round"
                           pointerEvents="none"
@@ -6194,6 +7063,7 @@ function App() {
                             y2={inhibitionBar.y2}
                             stroke={connector.stroke}
                             strokeWidth={Math.max(3, connector.strokeWidth - 0.5)}
+                            strokeDasharray={strokeDasharray || undefined}
                             strokeLinecap="round"
                             pointerEvents="none"
                           />
@@ -6218,8 +7088,8 @@ function App() {
                         {isSelected ? (
                           <>
                             <circle
-                              cx={connector.from.x}
-                              cy={connector.from.y}
+                              cx={resolvedConnector.from.x}
+                              cy={resolvedConnector.from.y}
                               r="9"
                               fill="#ffffff"
                               stroke={connector.stroke}
@@ -6234,8 +7104,8 @@ function App() {
                               }}
                             />
                             <circle
-                              cx={connector.to.x}
-                              cy={connector.to.y}
+                              cx={resolvedConnector.to.x}
+                              cy={resolvedConnector.to.y}
                               r="9"
                               fill="#ffffff"
                               stroke={connector.stroke}
@@ -6249,6 +7119,31 @@ function App() {
                                 });
                               }}
                             />
+                            {geometry.route === "curve" && geometry.curveHandle ? (
+                              <>
+                                <line
+                                  className="connector-curve-guide"
+                                  x1={(resolvedConnector.from.x + resolvedConnector.to.x) / 2}
+                                  y1={(resolvedConnector.from.y + resolvedConnector.to.y) / 2}
+                                  x2={geometry.curveHandle.x}
+                                  y2={geometry.curveHandle.y}
+                                />
+                                <circle
+                                  className="connector-curve-handle"
+                                  cx={geometry.curveHandle.x}
+                                  cy={geometry.curveHandle.y}
+                                  r="8"
+                                  onPointerDown={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    setDragState({
+                                      kind: "connector-curve",
+                                      id: connector.id,
+                                    });
+                                  }}
+                                />
+                              </>
+                            ) : null}
                           </>
                         ) : null}
                       </g>
@@ -6281,11 +7176,18 @@ function App() {
                           width: node.w,
                           height: node.h,
                           opacity: node.opacity,
-                          transform: `rotate(${node.rotation}deg)`,
+                          transform: getNodeTransformStyle(node),
+                          filter: getNodeEffectStyle(node),
+                          ...getAssetMaskStyle(node),
                         }}
                         onPointerDown={(event) => handleNodePointerDown(node, event)}
                       >
-                        <img src={node.assetUrl} alt={node.title} draggable="false" />
+                        <img
+                          src={node.assetUrl}
+                          alt={node.title}
+                          draggable="false"
+                          style={getAssetImageStyle(node)}
+                        />
                       </button>
                     );
                   }
@@ -6307,7 +7209,8 @@ function App() {
                           top: node.y - node.fontSize,
                           width: node.w,
                           opacity: node.opacity,
-                          transform: `rotate(${node.rotation}deg)`,
+                          transform: getNodeTransformStyle(node),
+                          filter: getNodeEffectStyle(node),
                           color: node.color,
                           fontSize: node.fontSize,
                           fontWeight: node.fontWeight,
@@ -6339,7 +7242,8 @@ function App() {
                         width: node.w,
                         height: node.h,
                         opacity: node.opacity,
-                        transform: `rotate(${node.rotation}deg)`,
+                        transform: getNodeTransformStyle(node),
+                        filter: getNodeEffectStyle(node),
                         background: node.fill,
                         borderColor: node.stroke,
                         color: node.color,
@@ -6351,6 +7255,37 @@ function App() {
                     </button>
                   );
                 })}
+
+                {selectionTransformBox ? (
+                  <div
+                    className={`transform-box ${hasLockedSelectedNodes ? "is-locked" : ""}`}
+                    style={{
+                      left: selectionTransformBox.left,
+                      top: selectionTransformBox.top,
+                      width: selectionTransformBox.width,
+                      height: selectionTransformBox.height,
+                    }}
+                    onPointerDown={(event) => event.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      className="transform-rotate-handle"
+                      aria-label="Rotate selection"
+                      title="Drag to rotate. Hold Shift for 15° snapping."
+                      onPointerDown={(event) => startSelectionTransform("rotate", event)}
+                    />
+                    {TRANSFORM_HANDLES.map((handle) => (
+                      <button
+                        key={handle.id}
+                        type="button"
+                        className={`transform-handle transform-handle--${handle.id}`}
+                        aria-label={handle.label}
+                        title={`${handle.label}${CORNER_TRANSFORM_HANDLES.has(handle.id) ? " · Shift toggles aspect lock" : ""}`}
+                        onPointerDown={(event) => startSelectionTransform(handle.id, event)}
+                      />
+                    ))}
+                  </div>
+                ) : null}
 
                 {commentsVisible
                   ? positionedComments.map(({ comment, position }, index) => {
@@ -6483,6 +7418,59 @@ function App() {
                     </button>
                   ) : null}
                 </div>
+                <div className="stack-row">
+                  <button type="button" className="secondary-button" onClick={copySelectedStyle}>
+                    Copy lead style
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={pasteStyleToSelection}
+                    disabled={styleClipboard?.kind !== "node-style" || hasLockedSelectedNodes}
+                  >
+                    Paste style
+                  </button>
+                </div>
+                <div className="transform-action-grid">
+                  <button
+                    type="button"
+                    className={`ghost-button ${transformAspectLocked ? "is-toggled" : ""}`}
+                    onClick={() => setTransformAspectLocked((value) => !value)}
+                  >
+                    Aspect {transformAspectLocked ? "locked" : "free"}
+                  </button>
+                  <button type="button" className="ghost-button" onClick={() => flipSelection("horizontal")}>
+                    Flip H
+                  </button>
+                  <button type="button" className="ghost-button" onClick={() => flipSelection("vertical")}>
+                    Flip V
+                  </button>
+                  <button type="button" className="ghost-button" onClick={() => rotateSelectionBy(-90)}>
+                    Rotate -90°
+                  </button>
+                  <button type="button" className="ghost-button" onClick={() => rotateSelectionBy(90)}>
+                    Rotate +90°
+                  </button>
+                  <button type="button" className="ghost-button" onClick={fitSelectionToBoard}>
+                    Fit board
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => matchSelectionSize("width")}
+                    disabled={selectedNodes.length < 2}
+                  >
+                    Match width
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => matchSelectionSize("height")}
+                    disabled={selectedNodes.length < 2}
+                  >
+                    Match height
+                  </button>
+                </div>
                 <div className="batch-action-grid">
                   <button type="button" className="secondary-button" onClick={() => alignSelection("left")}>
                     Align left
@@ -6518,16 +7506,68 @@ function App() {
                   >
                     Distribute Y
                   </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => arrangeSelection("row")}
+                    disabled={selectedNodes.length < 2}
+                  >
+                    Tidy row
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => arrangeSelection("column")}
+                    disabled={selectedNodes.length < 2}
+                  >
+                    Tidy column
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => arrangeSelection("grid")}
+                    disabled={selectedNodes.length < 3}
+                  >
+                    Tidy grid
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => arrangeSelection("radial")}
+                    disabled={selectedNodes.length < 3}
+                  >
+                    Radial ring
+                  </button>
                 </div>
                 <div className="stack-row">
                   <button type="button" className="secondary-button" onClick={duplicateSelection}>
                     Duplicate selection
                   </button>
+                  <button type="button" className="ghost-button" onClick={copySceneSelection}>
+                    Copy fragment
+                  </button>
+                  <button type="button" className="ghost-button" onClick={cutSceneSelection}>
+                    Cut fragment
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={pasteSceneClipboard}
+                    disabled={!sceneClipboard}
+                  >
+                    Paste fragment
+                  </button>
                   <button type="button" className="ghost-button" onClick={bringForward}>
                     Bring forward
                   </button>
+                  <button type="button" className="ghost-button" onClick={bringToFront}>
+                    To front
+                  </button>
                   <button type="button" className="ghost-button" onClick={sendBackward}>
                     Send back
+                  </button>
+                  <button type="button" className="ghost-button" onClick={sendToBack}>
+                    To back
                   </button>
                 </div>
               </div>
@@ -6567,6 +7607,40 @@ function App() {
                     Save as component
                   </button>
                 </div>
+                <div className="stack-row">
+                  <button type="button" className="secondary-button" onClick={copySelectedStyle}>
+                    Copy style
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={pasteStyleToSelection}
+                    disabled={styleClipboard?.kind !== "node-style" || selectedNode.locked}
+                  >
+                    Paste style
+                  </button>
+                </div>
+                <div className="stack-row">
+                  <button type="button" className="secondary-button" onClick={copySceneSelection}>
+                    Copy fragment
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={cutSceneSelection}
+                    disabled={selectedNode.locked}
+                  >
+                    Cut fragment
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={pasteSceneClipboard}
+                    disabled={!sceneClipboard}
+                  >
+                    Paste fragment
+                  </button>
+                </div>
 
                 {selectedNode.hidden ? (
                   <p className="helper-copy">
@@ -6590,7 +7664,46 @@ function App() {
                   </p>
                 )}
 
+                <div className="transform-action-grid">
+                  <button
+                    type="button"
+                    className={`ghost-button ${transformAspectLocked ? "is-toggled" : ""}`}
+                    onClick={() => setTransformAspectLocked((value) => !value)}
+                  >
+                    Aspect {transformAspectLocked ? "locked" : "free"}
+                  </button>
+                  <button type="button" className="ghost-button" onClick={() => flipSelection("horizontal")}>
+                    Flip H
+                  </button>
+                  <button type="button" className="ghost-button" onClick={() => flipSelection("vertical")}>
+                    Flip V
+                  </button>
+                  <button type="button" className="ghost-button" onClick={() => rotateSelectionBy(-90)}>
+                    Rotate -90°
+                  </button>
+                  <button type="button" className="ghost-button" onClick={() => rotateSelectionBy(90)}>
+                    Rotate +90°
+                  </button>
+                  <button type="button" className="ghost-button" onClick={fitSelectionToBoard}>
+                    Fit board
+                  </button>
+                </div>
+
                 <fieldset className="inspector-fieldset" disabled={selectedNode.locked}>
+                  <label>
+                    Visual effect
+                    <select
+                      value={selectedNode.effect ?? "none"}
+                      onChange={(event) => updateSelectedNode({ effect: event.target.value })}
+                    >
+                      {NODE_EFFECT_OPTIONS.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
                   {selectedNode.type === "text" ? (
                     <>
                       <label>
@@ -6725,19 +7838,92 @@ function App() {
                   ) : null}
 
                   {selectedNode.type === "asset" ? (
-                    <div className="source-box">
-                      <strong>{selectedNode.sourceLabel}</strong>
-                      <span>{selectedNode.licenseLabel}</span>
-                      {selectedNode.sourcePage ? (
+                    <>
+                      <div className="source-box">
+                        <strong>{selectedNode.sourceLabel}</strong>
+                        <span>{selectedNode.licenseLabel}</span>
+                        {selectedNode.sourcePage ? (
+                          <button
+                            type="button"
+                            className="ghost-button"
+                            onClick={() => openExternalLink(selectedNode.sourcePage)}
+                          >
+                            Open source page
+                          </button>
+                        ) : null}
+                      </div>
+                      <div className="inspector-grid">
+                        <label>
+                          Image fit
+                          <select
+                            value={selectedNode.assetFit ?? "contain"}
+                            onChange={(event) => updateSelectedNode({ assetFit: event.target.value })}
+                          >
+                            {ASSET_FIT_OPTIONS.map((option) => (
+                              <option key={option.id} value={option.id}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          Mask
+                          <select
+                            value={selectedNode.assetMask ?? "none"}
+                            onChange={(event) => updateSelectedNode({ assetMask: event.target.value })}
+                          >
+                            {ASSET_MASK_OPTIONS.map((option) => (
+                              <option key={option.id} value={option.id}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                      <div className="inspector-grid">
+                        <label>
+                          Crop X
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={selectedNode.cropX ?? 50}
+                            onChange={(event) => updateSelectedNode({ cropX: Number(event.target.value) })}
+                          />
+                        </label>
+                        <label>
+                          Crop Y
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={selectedNode.cropY ?? 50}
+                            onChange={(event) => updateSelectedNode({ cropY: Number(event.target.value) })}
+                          />
+                        </label>
+                        <label>
+                          Zoom
+                          <input
+                            type="range"
+                            min="1"
+                            max="3"
+                            step="0.05"
+                            value={selectedNode.cropZoom ?? 1}
+                            onChange={(event) => updateSelectedNode({ cropZoom: Number(event.target.value) })}
+                          />
+                        </label>
                         <button
                           type="button"
                           className="ghost-button"
-                          onClick={() => openExternalLink(selectedNode.sourcePage)}
+                          onClick={resetSelectedAssetCrop}
                         >
-                          Open source page
+                          Reset crop
                         </button>
-                      ) : null}
-                    </div>
+                      </div>
+                      <p className="helper-copy">
+                        Use Crop to fill plus masks for microscopy panels, generated images, and imported figures that need a designed frame.
+                      </p>
+                    </>
                   ) : null}
 
                   <div className="inspector-grid">
@@ -6787,8 +7973,8 @@ function App() {
                     Rotation
                     <input
                       type="range"
-                      min="-25"
-                      max="25"
+                      min="-180"
+                      max="180"
                       step="1"
                       value={selectedNode.rotation}
                       onChange={(event) =>
@@ -6816,8 +8002,14 @@ function App() {
                     <button type="button" className="ghost-button" onClick={bringForward}>
                       Bring forward
                     </button>
+                    <button type="button" className="ghost-button" onClick={bringToFront}>
+                      To front
+                    </button>
                     <button type="button" className="ghost-button" onClick={sendBackward}>
                       Send back
+                    </button>
+                    <button type="button" className="ghost-button" onClick={sendToBack}>
+                      To back
                     </button>
                   </div>
                 </fieldset>
@@ -6885,6 +8077,38 @@ function App() {
                     placeholder="Optional interaction label"
                   />
                 </label>
+                <div className="stack-row">
+                  <button type="button" className="secondary-button" onClick={copySelectedStyle}>
+                    Copy style
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={pasteStyleToSelection}
+                    disabled={styleClipboard?.kind !== "connector-style"}
+                  >
+                    Paste style
+                  </button>
+                </div>
+                <div className="stack-row">
+                  <button type="button" className="secondary-button" onClick={duplicateSelection}>
+                    Duplicate
+                  </button>
+                  <button type="button" className="ghost-button" onClick={copySceneSelection}>
+                    Copy fragment
+                  </button>
+                  <button type="button" className="ghost-button" onClick={cutSceneSelection}>
+                    Cut fragment
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={pasteSceneClipboard}
+                    disabled={!sceneClipboard}
+                  >
+                    Paste fragment
+                  </button>
+                </div>
                 <div className="inspector-grid">
                   <label>
                     Meaning
@@ -6916,20 +8140,66 @@ function App() {
                       ))}
                     </select>
                   </label>
+                  <label>
+                    Line style
+                    <select
+                      value={selectedConnector.lineStyle ?? "solid"}
+                      onChange={(event) =>
+                        updateSelectedConnector({ lineStyle: event.target.value })
+                      }
+                    >
+                      {CONNECTOR_LINE_STYLE_OPTIONS.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
+                {selectedConnector.route === "curve" ? (
+                  <label>
+                    Curve bend
+                    <input
+                      type="range"
+                      min="-100"
+                      max="100"
+                      value={selectedConnector.curveBend ?? 0}
+                      onChange={(event) =>
+                        updateSelectedConnector({ curveBend: Number(event.target.value) })
+                      }
+                    />
+                  </label>
+                ) : null}
+                <div className="stack-row">
+                  <button type="button" className="secondary-button" onClick={autoAnchorSelectedConnector}>
+                    Auto anchor ends
+                  </button>
+                  <button type="button" className="ghost-button" onClick={detachSelectedConnectorAnchors}>
+                    Detach anchors
+                  </button>
+                </div>
+                <div className="connector-anchor-summary">
+                  <span>Start: {describeConnectorAnchor(selectedConnector.fromAnchor)}</span>
+                  <span>End: {describeConnectorAnchor(selectedConnector.toAnchor)}</span>
+                </div>
+                <p className="helper-copy">
+                  Drag an endpoint near a layer edge to attach it. Hold Alt while dragging to keep the endpoint free.
+                  Curved routes also expose a teal bend handle; hold Shift while bending for clean 10-step increments.
+                </p>
                 <div className="inspector-grid">
                   <label>
                     Start X
                     <input
                       className="text-input"
                       type="number"
-                      value={Math.round(selectedConnector.from.x)}
+                      value={Math.round(selectedResolvedConnector?.from.x ?? selectedConnector.from.x)}
                       onChange={(event) =>
                         updateSelectedConnector({
                           from: {
-                            ...selectedConnector.from,
+                            ...(selectedResolvedConnector?.from ?? selectedConnector.from),
                             x: Number(event.target.value),
                           },
+                          fromAnchor: null,
                         })
                       }
                     />
@@ -6939,13 +8209,14 @@ function App() {
                     <input
                       className="text-input"
                       type="number"
-                      value={Math.round(selectedConnector.from.y)}
+                      value={Math.round(selectedResolvedConnector?.from.y ?? selectedConnector.from.y)}
                       onChange={(event) =>
                         updateSelectedConnector({
                           from: {
-                            ...selectedConnector.from,
+                            ...(selectedResolvedConnector?.from ?? selectedConnector.from),
                             y: Number(event.target.value),
                           },
+                          fromAnchor: null,
                         })
                       }
                     />
@@ -6955,13 +8226,14 @@ function App() {
                     <input
                       className="text-input"
                       type="number"
-                      value={Math.round(selectedConnector.to.x)}
+                      value={Math.round(selectedResolvedConnector?.to.x ?? selectedConnector.to.x)}
                       onChange={(event) =>
                         updateSelectedConnector({
                           to: {
-                            ...selectedConnector.to,
+                            ...(selectedResolvedConnector?.to ?? selectedConnector.to),
                             x: Number(event.target.value),
                           },
+                          toAnchor: null,
                         })
                       }
                     />
@@ -6971,13 +8243,14 @@ function App() {
                     <input
                       className="text-input"
                       type="number"
-                      value={Math.round(selectedConnector.to.y)}
+                      value={Math.round(selectedResolvedConnector?.to.y ?? selectedConnector.to.y)}
                       onChange={(event) =>
                         updateSelectedConnector({
                           to: {
-                            ...selectedConnector.to,
+                            ...(selectedResolvedConnector?.to ?? selectedConnector.to),
                             y: Number(event.target.value),
                           },
+                          toAnchor: null,
                         })
                       }
                     />
@@ -7007,7 +8280,10 @@ function App() {
                   />
                 </label>
                 <p className="helper-copy">
-                  Connector length: {Math.round(getHandleDistance(selectedConnector.from, selectedConnector.to))} px
+                  Connector length: {Math.round(getHandleDistance(
+                    selectedResolvedConnector?.from ?? selectedConnector.from,
+                    selectedResolvedConnector?.to ?? selectedConnector.to,
+                  ))} px
                   {" · "}
                   {selectedConnector.kind === "activation"
                     ? "activates"
@@ -7162,10 +8438,10 @@ function App() {
           <div className="panel">
             <div className="panel__head">
               <h3>Layer order</h3>
-              <span>{project.nodes.length} nodes</span>
+              <span>{project.nodes.length} nodes · top first</span>
             </div>
             <div className="layer-list">
-              {project.nodes.map((node, index) => (
+              {[...project.nodes].reverse().map((node, index) => (
                 <div
                   key={node.id}
                   className={`layer-item ${
@@ -7189,6 +8465,22 @@ function App() {
                     </div>
                   </button>
                   <div className="layer-item__actions">
+                    <button
+                      type="button"
+                      className="layer-icon-button layer-icon-button--compact"
+                      onClick={() => reorderSingleLayer(node.id, "forward")}
+                      title="Move layer up"
+                    >
+                      Up
+                    </button>
+                    <button
+                      type="button"
+                      className="layer-icon-button layer-icon-button--compact"
+                      onClick={() => reorderSingleLayer(node.id, "backward")}
+                      title="Move layer down"
+                    >
+                      Down
+                    </button>
                     <button
                       type="button"
                       className={`layer-icon-button ${node.hidden ? "is-active" : ""}`}

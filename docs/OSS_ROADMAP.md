@@ -41,13 +41,15 @@ Shipped foundation:
 
 - validated built-in asset packs with provenance summaries
 - local project files, recovery drafts, and named snapshots
-- marquee selection, grouping, align/distribute, alignment guides, and panel layouts
+- marquee selection, grouping, transform handles, align/distribute, alignment guides, tidy layout tools, layer ordering, and panel layouts
+- smart connector anchoring, route styling, curve bending, graph-aware fragment copy/paste, and style transfer
+- asset crop, mask, fit, zoom, and visual-effect controls with export preservation
 - reusable components plus common annotation blocks
 - inline local review comments that stay out of exports
 - SVG, PNG, PDF, JSON, and attribution export paths
 - real biology examples and tutorial artifacts
 
-That means the near-term roadmap is now about refinement and trust: better text and connector controls, stronger export presets, improved retrieval, and clearer contributor architecture.
+That means the near-term roadmap is now about refinement and trust: richer scientific text controls, deeper connector labels and semantics, stronger export presets, improved retrieval, and clearer contributor architecture.
 
 ## Milestones
 
@@ -188,8 +190,9 @@ People should be able to help in clearly scoped ways:
 
 ## Next Concrete Steps
 
-1. Finish richer text and connector controls.
-2. Add export presets for paper, slide, and poster workflows.
-3. Improve search and retrieval across packs.
-4. Add contributor architecture docs for editor, packs, exports, and AI boundaries.
-5. Keep building toward a stable public-good release rather than a hosted service.
+1. Finish richer scientific text controls and inline notation workflows.
+2. Deepen connector labels, pathway semantics, and graph annotation tools.
+3. Add export presets for paper, slide, and poster workflows.
+4. Improve search and retrieval across packs.
+5. Add contributor architecture docs for editor, packs, exports, and AI boundaries.
+6. Keep building toward a stable public-good release rather than a hosted service.
